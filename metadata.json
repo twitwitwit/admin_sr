@@ -1,0 +1,6 @@
+{
+  "name": "SwiftRide Admin Console",
+  "description": "Enterprise Ride-Hailing & Fleet Dispatch Management System with Real-Time Telemetry and Emergency SOS Desk",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,166 @@
+{
+  "entities": {
+    "emergencyAlert": {
+      "title": "Emergency Alert",
+      "description": "Real-time safety SOS emergency event with telemetry and dispatch log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string", "enum": ["critical", "responding", "resolved"] },
+        "loggedAt": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "tripId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userRole": { "type": "string", "enum": ["PASSENGER", "DRIVER"] },
+        "userPhone": { "type": "string" },
+        "incidentLog": { "type": "string" },
+        "assignedUnit": { "type": "string" }
+      },
+      "required": ["id", "type", "status", "timestamp", "userName", "userPhone", "incidentLog"]
+    },
+    "driver": {
+      "title": "Driver",
+      "description": "Registered driver partner profile with vehicle data, ratings, telemetry, and verification audit info",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "plateNumber": { "type": "string" },
+        "vehicleDetails": { "type": "string" },
+        "vehicleType": { "type": "string" },
+        "city": { "type": "string" },
+        "rating": { "type": "number" },
+        "completedTrips": { "type": "number" },
+        "acceptanceRate": { "type": "number" },
+        "status": { "type": "string", "enum": ["ONLINE", "ON TRIP", "OFFLINE", "SUSPENDED"] },
+        "isPendingAudit": { "type": "boolean" }
+      },
+      "required": ["id", "name", "phone", "email", "plateNumber", "status"]
+    },
+    "passenger": {
+      "title": "Passenger",
+      "description": "Passenger account profile and ride history statistics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "walletBalance": { "type": "number" },
+        "completedRides": { "type": "number" },
+        "rating": { "type": "number" },
+        "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] }
+      },
+      "required": ["id", "name", "phone", "email", "walletBalance", "status"]
+    },
+    "booking": {
+      "title": "Booking",
+      "description": "Trip booking record with coordinates, fare, payment method, and dispatch lifecycle status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "time": { "type": "string" },
+        "date": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "fare": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string", "enum": ["REQUESTED", "ACCEPTED", "ARRIVING", "IN PROGRESS", "COMPLETED", "CANCELLED"] }
+      },
+      "required": ["id", "timestamp", "fare", "paymentMethod", "status"]
+    },
+    "supportTicket": {
+      "title": "Support Ticket",
+      "description": "Customer and driver dispute and inquiry ticket with message threads",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userName": { "type": "string" },
+        "userRole": { "type": "string" },
+        "subject": { "type": "string" },
+        "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "status": { "type": "string", "enum": ["OPEN", "IN PROGRESS", "RESOLVED"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userName", "subject", "priority", "status"]
+    },
+    "systemNotification": {
+      "title": "System Notification",
+      "description": "Real-time fleet, SOS, server, and regulatory alert notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "title", "message", "timestamp", "read"]
+    },
+    "activityLog": {
+      "title": "Activity Log",
+      "description": "Immutable audit feed of administrator and operational actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "timeAgo": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "iconType": { "type": "string" }
+      },
+      "required": ["id", "text", "timestamp"]
+    },
+    "systemSettings": {
+      "title": "System Settings",
+      "description": "Global ride-hailing fare parameters, commission rates, and safety thresholds",
+      "type": "object",
+      "properties": {
+        "baseFare": { "type": "number" },
+        "perKmRate": { "type": "number" },
+        "perMinRate": { "type": "number" },
+        "surgeMultiplier": { "type": "number" },
+        "commissionRate": { "type": "number" },
+        "autoPayoutThreshold": { "type": "number" },
+        "speedAlertThresholdKmh": { "type": "number" }
+      },
+      "required": ["baseFare", "perKmRate", "commissionRate"]
+    }
+  },
+  "firestore": {
+    "/emergencyAlerts/{alertId}": {
+      "schema": "emergencyAlert",
+      "description": "Collection of emergency SOS alerts and real-time dispatch events"
+    },
+    "/drivers/{driverId}": {
+      "schema": "driver",
+      "description": "Registered driver fleet records"
+    },
+    "/passengers/{passengerId}": {
+      "schema": "passenger",
+      "description": "Registered passenger user accounts"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "booking",
+      "description": "Trip booking and dispatch records"
+    },
+    "/supportTickets/{ticketId}": {
+      "schema": "supportTicket",
+      "description": "Support tickets and dispute resolution threads"
+    },
+    "/systemNotifications/{notificationId}": {
+      "schema": "systemNotification",
+      "description": "Live system notices, SOS triggers, and platform warnings"
+    },
+    "/activityLogs/{logId}": {
+      "schema": "activityLog",
+      "description": "Real-time audit log stream"
+    },
+    "/settings/system": {
+      "schema": "systemSettings",
+      "description": "Global platform fare matrices, surge limits, and safety configs"
+    }
+  }
+}
