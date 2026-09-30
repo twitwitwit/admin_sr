@@ -4,13 +4,11 @@ import {
   Star,
   ShieldCheck,
   Clock,
-  Database,
 } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 import { Driver, DriverStatus } from '../../types';
 import { formatHumanReadableDriverId } from '../../utils/idHelpers';
 import { getFallbackAvatarUrl, isCustomUploadedAvatar } from '../../utils/imageHelpers';
-import { FirestoreDatabaseInspector } from '../database/FirestoreDatabaseInspector';
 
 interface DriversViewProps {
   onInspectDriver: (driver: Driver) => void;
@@ -19,7 +17,7 @@ interface DriversViewProps {
 
 export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpenCall }) => {
   const { drivers, approveDriver, rejectDriver, exportCsvData, refreshCloudData } = useRealtimeDb();
-  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'database'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'pending'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -120,18 +118,6 @@ export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpe
               </span>
             )}
           </button>
-
-          <button
-            onClick={() => setActiveTab('database')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-              activeTab === 'database'
-                ? 'bg-amber-500 text-black font-extrabold shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>Firestore Database</span>
-          </button>
         </div>
 
         {/* Search, Cloud Sync & Export */}
@@ -165,10 +151,7 @@ export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpe
         </div>
       </div>
 
-      {activeTab === 'database' ? (
-        <FirestoreDatabaseInspector />
-      ) : (
-      /* Drivers Table */
+      {/* Drivers Table */}
       <div className="bg-[#0c121e] border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -373,7 +356,6 @@ export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpe
           <span className="font-mono text-[11px] text-amber-400">Regulatory Compliant Network • Live Firestore Sync Active</span>
         </div>
       </div>
-      )}
     </div>
   );
 };

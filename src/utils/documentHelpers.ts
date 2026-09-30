@@ -15,6 +15,8 @@ export const REQUIREMENT_TYPES: RequirementType[] = [
   'VEHICLE_PHOTO',
 ];
 
+export const ALL_REQUIREMENT_TYPES = REQUIREMENT_TYPES;
+
 const TYPE_ALIASES: Record<RequirementType, string[]> = {
   LICENSE_FRONT: [
     'LICENSE_FRONT',
@@ -28,7 +30,7 @@ const TYPE_ALIASES: Record<RequirementType, string[]> = {
   LICENSE_BACK: ['LICENSE_BACK', 'DL_BACK', 'DRIVERS_LICENSE_BACK', 'DRIVER_LICENSE_BACK'],
   NBI: ['NBI', 'NBI_CLEARANCE'],
   ORCR: ['ORCR', 'OR_CR', 'VEHICLE_ORCR'],
-  VEHICLE_PHOTO: ['VEHICLE_PHOTO', 'VEHICLE', 'CAR_PHOTO', 'UNIT_PHOTO', 'VEHICLE_IMAGE'],
+  VEHICLE_PHOTO: ['VEHICLE_PHOTO', 'VEHICLE', 'CAR_PHOTO', 'UNIT_PHOTO', 'VEHICLE_IMAGE', 'VEHICLE_PICTURE'],
 };
 
 const normalizeTypeKey = (raw: unknown): string => {
@@ -40,19 +42,19 @@ const normalizeTypeKey = (raw: unknown): string => {
 };
 
 const TOP_LEVEL_URL_FIELDS: Record<RequirementType, string[]> = {
-  LICENSE_FRONT: ['licenseFrontUrl', 'licenseUrl', 'driversLicenseUrl'],
-  LICENSE_BACK: ['licenseBackUrl'],
+  LICENSE_FRONT: ['licenseFrontUrl', 'licenseUrl', 'driversLicenseUrl', 'driversLicenseFrontUrl'],
+  LICENSE_BACK: ['licenseBackUrl', 'driversLicenseBackUrl'],
   NBI: ['nbiUrl', 'nbiClearanceUrl'],
-  ORCR: ['orcrUrl', 'orCrUrl', 'or_cr_url', 'vehicleOrCrUrl'],
-  VEHICLE_PHOTO: ['vehiclePhotoUrl'],
+  ORCR: ['orcrUrl', 'orCrUrl', 'or_cr_url', 'vehicleOrCrUrl', 'vehicleOrcrUrl'],
+  VEHICLE_PHOTO: ['vehiclePhotoUrl', 'vehiclePictureUrl', 'carPhotoUrl'],
 };
 
 const LEGACY_DOC_FIELDS: Record<RequirementType, string[]> = {
-  LICENSE_FRONT: ['license', 'licenseFront', 'driversLicense'],
-  LICENSE_BACK: ['licenseBack'],
+  LICENSE_FRONT: ['license', 'licenseFront', 'driversLicense', 'driversLicenseFront'],
+  LICENSE_BACK: ['licenseBack', 'driversLicenseBack'],
   NBI: ['nbi', 'nbiClearance'],
-  ORCR: ['orCr', 'orcr', 'or_cr', 'vehicleOrCr'],
-  VEHICLE_PHOTO: ['vehiclePhoto', 'vehicle'],
+  ORCR: ['orCr', 'orcr', 'or_cr', 'vehicleOrCr', 'vehicleOrcr'],
+  VEHICLE_PHOTO: ['vehiclePhoto', 'vehiclePicture', 'vehicle'],
 };
 
 /**
@@ -76,8 +78,53 @@ export const isValidRequirementImageUrl = (val: unknown): string | undefined => 
   if (norm.startsWith('data:image/') || norm.startsWith('blob:')) {
     return norm;
   }
+  // Ignore stock Unsplash demo images for driver requirement documents unless explicitly uploaded
+  if (norm.includes('images.unsplash.com')) {
+    return undefined;
+  }
   if (isWebRenderableImageUrl(norm)) {
     return norm;
+  }
+  return undefined;
+};
+
+const extractValidImageFromEntry = (
+  entry: unknown,
+  onlyDataUri: boolean
+): string | undefined => {
+  if (!entry) return undefined;
+  if (typeof entry === 'string') {
+    const valid = isValidRequirementImageUrl(entry);
+    if (!valid) return undefined;
+    return onlyDataUri ? (valid.startsWith('data:image/') ? valid : undefined) : valid;
+  }
+  if (typeof entry === 'object') {
+    const obj = entry as Record<string, any>;
+    const candidateFields = [
+      obj.url,
+      obj.imageUrl,
+      obj.photoUri,
+      obj.photoUrl,
+      obj.fileUrl,
+      obj.documentUrl,
+      obj.previewUrl,
+      obj.downloadUrl,
+      obj.image,
+      obj.photo,
+      obj.src,
+      obj.base64,
+      obj.dataUrl,
+    ];
+    for (const candidate of candidateFields) {
+      const valid = isValidRequirementImageUrl(candidate);
+      if (valid) {
+        if (onlyDataUri) {
+          if (valid.startsWith('data:image/')) return valid;
+        } else {
+          return valid;
+        }
+      }
+    }
   }
   return undefined;
 };
@@ -92,8 +139,19 @@ export const findRequirementItemInSource = (
   if (!source || typeof source !== 'object') return undefined;
   const aliases = TYPE_ALIASES[reqType];
 
+  if (Array.isArray(source)) {
+    return source.find((item) => {
+      if (!item || typeof item !== 'object') return false;
+      const rawType = normalizeTypeKey(item.documentType || item.type || item.key || item.id);
+      return aliases.includes(rawType);
+    });
+  }
+
   const arraysToCheck = [
+    source.subcollectionRequirements,
+    source.subcollectionDocuments,
     source.requirements,
+    source.uploadedRequirements,
     source.requirementItems,
     source.items,
     source.documents,
@@ -101,18 +159,30 @@ export const findRequirementItemInSource = (
 
   for (const arr of arraysToCheck) {
     if (Array.isArray(arr)) {
+      const foundWithPhoto = arr.find((item) => {
+        if (!item || typeof item !== 'object') return false;
+        const rawType = normalizeTypeKey(item.documentType || item.type || item.key || item.id);
+        return aliases.includes(rawType) && Boolean(extractValidImageFromEntry(item, false));
+      });
+      if (foundWithPhoto) return foundWithPhoto;
+    }
+  }
+
+  for (const arr of arraysToCheck) {
+    if (Array.isArray(arr)) {
       const found = arr.find((item) => {
         if (!item || typeof item !== 'object') return false;
-        const rawType = normalizeTypeKey(item.documentType || item.type || item.id);
+        const rawType = normalizeTypeKey(item.documentType || item.type || item.key || item.id);
         return aliases.includes(rawType);
       });
       if (found) return found;
     }
   }
 
-  // Also check requirementsMap[type] if it's an object entry
+  // Also check requirementsMap[type] and documentsMap[type] if it's an object entry
   const mapsToCheck = [
     source.requirementsMap,
+    source.documentsMap,
     !Array.isArray(source.requirements) && typeof source.requirements === 'object' ? source.requirements : null,
   ];
   for (const mapObj of mapsToCheck) {
@@ -135,9 +205,13 @@ export const findRequirementItemInSource = (
 /**
  * Resolves the image URL for one of the 5 requirement types (LICENSE_FRONT, LICENSE_BACK, NBI, ORCR, VEHICLE_PHOTO)
  * from:
- * 1) driver.requirements (matching documentType or type and reading url, photoUri, or imageUrl)
- * 2) driver.requirementsMap[type].url (or photoUri / imageUrl)
- * 3) top-level fields (licenseFrontUrl, licenseBackUrl, nbiUrl, orcrUrl, vehiclePhotoUrl)
+ * 1) subcollections (drivers/{id}/requirements, drivers/{id}/documents, driverApplications/{id}/documents)
+ * 2) driver.requirements / uploadedRequirements / items / documents arrays
+ * 3) driver.requirementsMap[type] / driver.documentsMap[type]
+ * 4) top-level fields (licenseFrontUrl, licenseBackUrl, nbiUrl, orcrUrl, vehiclePhotoUrl)
+ *
+ * Uses a 2-pass scan so that a real `data:image/jpeg;base64,...` photo in ANY source
+ * always takes precedence over placeholder URLs.
  */
 export const resolveRequirementImageUrl = (
   sources: any[],
@@ -147,83 +221,86 @@ export const resolveRequirementImageUrl = (
   const topFields = TOP_LEVEL_URL_FIELDS[reqType];
   const legacyDocFields = LEGACY_DOC_FIELDS[reqType];
 
-  for (const src of sources) {
-    if (!src || typeof src !== 'object') continue;
+  const scanSources = (onlyDataUri: boolean): string | undefined => {
+    for (const src of sources) {
+      if (!src || typeof src !== 'object') continue;
 
-    // 1. Check requirements / requirementItems / items / documents array
-    const arraysToCheck = [src.requirements, src.requirementItems, src.items, src.documents];
-    for (const arr of arraysToCheck) {
-      if (Array.isArray(arr)) {
-        for (const item of arr) {
+      // If src itself is an array of subcollection documents
+      if (Array.isArray(src)) {
+        for (const item of src) {
           if (!item || typeof item !== 'object') continue;
-          const rawType = normalizeTypeKey(item.documentType || item.type || item.id);
+          const rawType = normalizeTypeKey(item.documentType || item.type || item.key || item.id);
           if (aliases.includes(rawType)) {
-            const candidate =
-              item.url ||
-              item.photoUri ||
-              item.imageUrl ||
-              item.fileUrl ||
-              item.photoUrl ||
-              item.base64;
-            const valid = isValidRequirementImageUrl(candidate);
+            const valid = extractValidImageFromEntry(item, onlyDataUri);
+            if (valid) return valid;
+          }
+        }
+        continue;
+      }
+
+      // 1. Check subcollections & requirement arrays
+      const arraysToCheck = [
+        src.subcollectionRequirements,
+        src.subcollectionDocuments,
+        src.requirements,
+        src.uploadedRequirements,
+        src.requirementItems,
+        src.items,
+        src.documents,
+      ];
+      for (const arr of arraysToCheck) {
+        if (Array.isArray(arr)) {
+          for (const item of arr) {
+            if (!item || typeof item !== 'object') continue;
+            const rawType = normalizeTypeKey(item.documentType || item.type || item.key || item.id);
+            if (aliases.includes(rawType)) {
+              const valid = extractValidImageFromEntry(item, onlyDataUri);
+              if (valid) return valid;
+            }
+          }
+        }
+      }
+
+      // 2. Check requirementsMap[type] & documentsMap[type] (or object-based requirements[type])
+      const mapsToCheck = [
+        src.requirementsMap,
+        src.documentsMap,
+        !Array.isArray(src.requirements) && typeof src.requirements === 'object' ? src.requirements : null,
+      ];
+      for (const mapObj of mapsToCheck) {
+        if (mapObj && typeof mapObj === 'object') {
+          for (const [key, entry] of Object.entries(mapObj)) {
+            if (!aliases.includes(normalizeTypeKey(key)) || !entry) continue;
+            const valid = extractValidImageFromEntry(entry, onlyDataUri);
             if (valid) return valid;
           }
         }
       }
-    }
 
-    // 2. Check requirementsMap[type].url (or object-based requirements[type])
-    const mapsToCheck = [
-      src.requirementsMap,
-      !Array.isArray(src.requirements) && typeof src.requirements === 'object' ? src.requirements : null,
-    ];
-    for (const mapObj of mapsToCheck) {
-      if (mapObj && typeof mapObj === 'object') {
-        for (const [key, entry] of Object.entries(mapObj)) {
-          if (!aliases.includes(normalizeTypeKey(key)) || !entry) continue;
-          if (typeof entry === 'string') {
-            const valid = isValidRequirementImageUrl(entry);
-            if (valid) return valid;
-          } else if (typeof entry === 'object') {
-            const e = entry as Record<string, any>;
-            const candidate =
-              e.url ||
-              e.photoUri ||
-              e.imageUrl ||
-              e.fileUrl ||
-              e.photoUrl ||
-              e.base64;
-            const valid = isValidRequirementImageUrl(candidate);
-            if (valid) return valid;
-          }
-        }
-      }
-    }
-
-    // 3. Check top-level fields (licenseFrontUrl, licenseBackUrl, nbiUrl, orcrUrl, vehiclePhotoUrl)
-    for (const field of topFields) {
-      const valid = isValidRequirementImageUrl(src[field]);
-      if (valid) return valid;
-    }
-
-    // 4. Check legacy documents object fields if they hold a valid image URL / data:image/...
-    const docsObj = !Array.isArray(src.documents) && typeof src.documents === 'object' ? src.documents : null;
-    if (docsObj) {
+      // 3. Check top-level fields (licenseFrontUrl, licenseBackUrl, nbiUrl, orcrUrl, vehiclePhotoUrl)
       for (const field of [...topFields, ...legacyDocFields]) {
-        const val = docsObj[field];
-        if (typeof val === 'string') {
-          const valid = isValidRequirementImageUrl(val);
-          if (valid) return valid;
-        } else if (val && typeof val === 'object') {
-          const candidate = val.url || val.photoUri || val.imageUrl || val.fileUrl || val.base64;
-          const valid = isValidRequirementImageUrl(candidate);
+        const valid = extractValidImageFromEntry(src[field], onlyDataUri);
+        if (valid) return valid;
+      }
+
+      // 4. Check legacy documents object fields if they hold a valid image URL / data:image/...
+      const docsObj = !Array.isArray(src.documents) && typeof src.documents === 'object' ? src.documents : null;
+      if (docsObj) {
+        for (const field of [...topFields, ...legacyDocFields]) {
+          const valid = extractValidImageFromEntry(docsObj[field], onlyDataUri);
           if (valid) return valid;
         }
       }
     }
-  }
+    return undefined;
+  };
 
-  return undefined;
+  // Pass 1: Prefer actual data:image/ base64 uploads from any source
+  const dataUriMatch = scanSources(true);
+  if (dataUriMatch) return dataUriMatch;
+
+  // Pass 2: Fall back to any valid web-renderable image URL
+  return scanSources(false);
 };
 
 /**

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Driver, DriverQuickNote } from '../../types';
 import {
@@ -82,9 +82,12 @@ export const DriverInspectionModal: React.FC<DriverInspectionModalProps> = ({
   const docPhotoInputRef = useRef<HTMLInputElement>(null);
   const [pendingUploadDoc, setPendingUploadDoc] = useState<{ id: string; type: string } | null>(null);
 
-  // Real-time Firestore snapshots for drivers/{driverId} and requirements/{driverId}
+  // Real-time Firestore snapshots for drivers/{driverId}, requirements/{driverId}, and subcollections
   const [driverSnapshotData, setDriverSnapshotData] = useState<Record<string, any> | null>(null);
   const [requirementsSnapshotData, setRequirementsSnapshotData] = useState<Record<string, any> | null>(null);
+  const [subcollectionReqDocs, setSubcollectionReqDocs] = useState<Record<string, any>[]>([]);
+  const [subcollectionDocDocs, setSubcollectionDocDocs] = useState<Record<string, any>[]>([]);
+  const [subcollectionAppDocs, setSubcollectionAppDocs] = useState<Record<string, any>[]>([]);
 
   // Live driver instance from real-time database to ensure immediate cross-admin synchronization
   const liveDriver = (driver ? drivers.find((d) => d.id === driver.id) : null) || driver;
@@ -93,6 +96,9 @@ export const DriverInspectionModal: React.FC<DriverInspectionModalProps> = ({
     if (!isOpen || !driver?.id) {
       setDriverSnapshotData(null);
       setRequirementsSnapshotData(null);
+      setSubcollectionReqDocs([]);
+      setSubcollectionDocDocs([]);
+      setSubcollectionAppDocs([]);
       return;
     }
 
@@ -129,6 +135,69 @@ export const DriverInspectionModal: React.FC<DriverInspectionModalProps> = ({
         );
         unsubs.push(unsubReq);
       } catch {}
+
+      // Listen to subcollection drivers/{driverId}/requirements
+      try {
+        const unsubSubReq = onSnapshot(
+          collection(db, 'drivers', docId, 'requirements'),
+          (snap) => {
+            if (!snap.empty) {
+              setSubcollectionReqDocs(
+                snap.docs.map((d) => ({
+                  id: d.id,
+                  type: d.data().type || d.data().documentType || d.id,
+                  documentType: d.data().documentType || d.data().type || d.id,
+                  ...d.data(),
+                }))
+              );
+            }
+          },
+          () => {}
+        );
+        unsubs.push(unsubSubReq);
+      } catch {}
+
+      // Listen to subcollection drivers/{driverId}/documents
+      try {
+        const unsubSubDocs = onSnapshot(
+          collection(db, 'drivers', docId, 'documents'),
+          (snap) => {
+            if (!snap.empty) {
+              setSubcollectionDocDocs(
+                snap.docs.map((d) => ({
+                  id: d.id,
+                  type: d.data().type || d.data().documentType || d.id,
+                  documentType: d.data().documentType || d.data().type || d.id,
+                  ...d.data(),
+                }))
+              );
+            }
+          },
+          () => {}
+        );
+        unsubs.push(unsubSubDocs);
+      } catch {}
+
+      // Listen to subcollection driverApplications/{driverId}/documents
+      try {
+        const unsubAppDocs = onSnapshot(
+          collection(db, 'driverApplications', docId, 'documents'),
+          (snap) => {
+            if (!snap.empty) {
+              setSubcollectionAppDocs(
+                snap.docs.map((d) => ({
+                  id: d.id,
+                  type: d.data().type || d.data().documentType || d.id,
+                  documentType: d.data().documentType || d.data().type || d.id,
+                  ...d.data(),
+                }))
+              );
+            }
+          },
+          () => {}
+        );
+        unsubs.push(unsubAppDocs);
+      } catch {}
     });
 
     return () => {
@@ -157,7 +226,13 @@ export const DriverInspectionModal: React.FC<DriverInspectionModalProps> = ({
 
   if (!isOpen || !driver || !liveDriver) return null;
 
-  const extraSources = [requirementsSnapshotData, driverSnapshotData].filter(Boolean);
+  const extraSources = [
+    subcollectionReqDocs.length > 0 ? { subcollectionRequirements: subcollectionReqDocs } : null,
+    subcollectionDocDocs.length > 0 ? { subcollectionDocuments: subcollectionDocDocs } : null,
+    subcollectionAppDocs.length > 0 ? { subcollectionDocuments: subcollectionAppDocs } : null,
+    requirementsSnapshotData,
+    driverSnapshotData,
+  ].filter(Boolean);
   const { uploadedRequirementsCount } = getDriverRequirementUrls([...extraSources, liveDriver]);
   const canVerifyRequirements = uploadedRequirementsCount >= 5;
   const documents = getDriverDocuments(liveDriver, extraSources);

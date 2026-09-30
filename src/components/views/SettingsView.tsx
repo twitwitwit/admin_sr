@@ -14,12 +14,10 @@ import {
   Key,
   Car,
   Bike,
-  Database,
 } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 import { SystemSettings } from '../../types';
 import { CreateAdminAccountModal } from '../modals/CreateAdminAccountModal';
-import { FirestoreDatabaseInspector } from '../database/FirestoreDatabaseInspector';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -33,7 +31,7 @@ export const SettingsView: React.FC = () => {
     toggleAdminAccountStatus,
   } = useRealtimeDb();
 
-  const [activeTab, setActiveTab] = useState<'system' | 'users' | 'reset-requests' | 'database'>('system');
+  const [activeTab, setActiveTab] = useState<'system' | 'users' | 'reset-requests'>('system');
   const [selectedVehicleTier, setSelectedVehicleTier] = useState<'4wheel' | '2wheel'>('4wheel');
   const [formData, setFormData] = useState<SystemSettings>({
     ...systemSettings,
@@ -133,18 +131,6 @@ export const SettingsView: React.FC = () => {
               {pendingReportsCount}
             </span>
           )}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('database')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'database'
-              ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Database className="w-3.5 h-3.5" />
-          <span>Firestore Database</span>
         </button>
       </div>
 
@@ -740,8 +726,6 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
       )}
-
-      {activeTab === 'database' && <FirestoreDatabaseInspector />}
 
       {/* Create Admin Account Modal */}
       <CreateAdminAccountModal

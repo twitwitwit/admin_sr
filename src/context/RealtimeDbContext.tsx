@@ -1085,6 +1085,7 @@ export const RealtimeDbProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const cloudDriversMap = new Map<string, Driver>();
     const cloudDriverUsersMap = new Map<string, Driver>();
     const cloudVerificationMap = new Map<string, Driver>();
+    const subscribedSubcollectionIds = new Set<string>();
 
     const syncCombinedDrivers = () => {
       const combined: Driver[] = [];
@@ -1093,6 +1094,52 @@ export const RealtimeDbProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       cloudDriverUsersMap.forEach((drv) => combined.push(drv));
       cloudVerificationMap.forEach((drv) => combined.push(drv));
       setDrivers(deduplicateDrivers([...combined, ...INITIAL_DRIVERS]));
+    };
+
+    const attachDriverSubcollectionListeners = (docId: string, baseRaw: any) => {
+      if (!docId || subscribedSubcollectionIds.has(docId)) return;
+      // Skip static fleet seed IDs that don't have subcollections
+      if (/^DRV-20[1-6]$/.test(docId) || docId === 'DRV-2026-001') return;
+      subscribedSubcollectionIds.add(docId);
+
+      const subPaths: [string, string][] = [
+        ['drivers', 'requirements'],
+        ['drivers', 'documents'],
+        ['driverApplications', 'documents'],
+      ];
+
+      subPaths.forEach(([parentCol, subCol]) => {
+        try {
+          const subUn = onSnapshot(
+            collection(db, parentCol, docId, subCol),
+            (subSnap) => {
+              if (!subSnap.empty) {
+                const subItems = subSnap.docs.map((sd) => {
+                  const sdata = sd.data() as any;
+                  return {
+                    id: sd.id,
+                    type: sdata.type || sdata.documentType || sd.id,
+                    documentType: sdata.documentType || sdata.type || sd.id,
+                    ...sdata,
+                  };
+                });
+                const syntheticRaw = {
+                  ...baseRaw,
+                  id: docId,
+                  driverId: docId,
+                  subcollectionRequirements: subItems,
+                  requirements: subItems,
+                };
+                const normalizedSub = normalizeDriver(syntheticRaw, docId);
+                cloudVerificationMap.set(`sub:${parentCol}:${subCol}:${docId}`, normalizedSub);
+                syncCombinedDrivers();
+              }
+            },
+            () => {}
+          );
+          unsubs.push(subUn);
+        } catch {}
+      });
     };
 
     // Drivers collection listener
@@ -1107,6 +1154,7 @@ export const RealtimeDbProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               const raw = d.data() as any;
               const normalized = normalizeDriver(raw, d.id);
               cloudDriversMap.set(normalized.id, normalized);
+              attachDriverSubcollectionListeners(d.id, raw);
             });
           }
 
@@ -1139,6 +1187,7 @@ export const RealtimeDbProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 const driverId = raw.driverId || raw.id || d.id;
                 const incoming = normalizeDriver(raw, driverId);
                 cloudVerificationMap.set(`${colName}:${driverId}`, incoming);
+                attachDriverSubcollectionListeners(driverId, raw);
               });
               syncCombinedDrivers();
             }
@@ -2649,14 +2698,35 @@ export const RealtimeDbProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         try {
           const snap = await getDocs(collection(db, colName));
           if (!snap.empty) {
-            snap.forEach((d) => {
+            for (const d of snap.docs) {
               const raw = d.data() as any;
               const role = String(raw.role || raw.userType || raw.type || '').toUpperCase();
-              const isPassengerOnly = role.includes('PASSENGER') || role.includes('RIDER') && !role.includes('DRIVER');
+              const isPassengerOnly = role.includes('PASSENGER') || (role.includes('RIDER') && !role.includes('DRIVER'));
               if (!isPassengerOnly) {
                 allDriverList.push(normalizeDriver(raw, d.id));
+                if (colName === 'drivers' || colName === 'driverApplications') {
+                  for (const subCol of ['requirements', 'documents']) {
+                    try {
+                      const subSnap = await getDocs(collection(db, colName, d.id, subCol));
+                      if (!subSnap.empty) {
+                        const subItems = subSnap.docs.map((sd) => ({
+                          id: sd.id,
+                          type: sd.data().type || sd.data().documentType || sd.id,
+                          documentType: sd.data().documentType || sd.data().type || sd.id,
+                          ...sd.data(),
+                        }));
+                        allDriverList.push(
+                          normalizeDriver(
+                            { ...raw, id: d.id, driverId: d.id, subcollectionRequirements: subItems, requirements: subItems },
+                            d.id
+                          )
+                        );
+                      }
+                    } catch {}
+                  }
+                }
               }
-            });
+            }
           }
         } catch {}
       }
