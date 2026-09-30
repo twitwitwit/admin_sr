@@ -1,58 +1,83 @@
 import React, { useState } from 'react';
 import {
-  Lock,
   Mail,
   ShieldCheck,
   Radio,
-  Car,
   KeyRound,
   ArrowRight,
+  AlertCircle,
+  HelpCircle,
   Shield,
-  Zap,
 } from 'lucide-react';
 import { SwiftRideLogo } from '../SwiftRideLogo';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
+import { ForcePasswordChangeModal } from '../modals/ForcePasswordChangeModal';
+import { RequestPasswordResetModal } from '../modals/RequestPasswordResetModal';
 
 interface LoginViewProps {
   onLoginSuccess: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const { currentAdminUser, setAdminUser } = useRealtimeDb();
-  const [email, setEmail] = useState(currentAdminUser.email);
-  const [password, setPassword] = useState('swiftride2026');
-  const [selectedRole, setSelectedRole] = useState(currentAdminUser.role);
+  const { authenticateUser, logAdminAction } = useRealtimeDb();
+  const [email, setEmail] = useState('admin@swiftride.ph');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleQuickRole = (role: 'Super Admin' | 'Fleet Manager' | 'Safety Dispatcher', em: string, name: string) => {
-    setSelectedRole(role);
-    setEmail(em);
-    setAdminUser({
-      name,
-      email: em,
-      role,
-      avatar: currentAdminUser.avatar,
-    });
-  };
+  // Modals
+  const [showForceChangeModal, setShowForceChangeModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg(null);
     setIsLoading(true);
 
-    setTimeout(() => {
+    try {
+      const res = await authenticateUser(email, password);
       setIsLoading(false);
-      onLoginSuccess();
-    }, 600);
+
+      if (res.error) {
+        setErrorMsg(res.error);
+        return;
+      }
+
+      if (res.mustChangePassword) {
+        // Must change temporary password first
+        setShowForceChangeModal(true);
+        return;
+      }
+
+      if (res.user) {
+        logAdminAction(
+          `Admin ${res.user.name} authenticated session via secure Hashed SSO (${res.user.role})`,
+          'auth',
+          'LOGIN',
+          `SES-${Math.floor(1000 + Math.random() * 9000)}`,
+          `${email} • Web Console Terminal`
+        );
+        onLoginSuccess();
+      }
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMsg(err.message || 'An error occurred during authentication.');
+    }
+  };
+
+  const handleForceChangeSuccess = () => {
+    setShowForceChangeModal(false);
+    onLoginSuccess();
   };
 
   return (
-    <div className="min-h-screen bg-[#070b13] flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-[#070b13] flex flex-col justify-center items-center p-4 relative overflow-hidden select-none">
       {/* Background Decorative Radial Glows */}
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
       {/* Main Login Card */}
-      <div className="w-full max-w-md bg-[#0c121e] border border-slate-800/90 rounded-3xl p-8 shadow-2xl relative z-10 space-y-6">
+      <div className="w-full max-w-md bg-[#0c121e] border border-slate-800/90 rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10 space-y-6">
         {/* Logo and Branding Header */}
         <div className="text-center space-y-2">
           <div className="flex justify-center">
@@ -63,38 +88,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </p>
         </div>
 
-        {/* Quick Role Selection Preset Pills */}
-        <div className="space-y-1.5">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider text-center">
-            Select Admin Role Preset
-          </span>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { role: 'Super Admin', email: 'admin@swiftride.ph', name: 'Frances Margaret' },
-              { role: 'Safety Dispatcher', email: 'sos.dispatch@swiftride.ph', name: 'Dispatch Unit 9' },
-              { role: 'Fleet Manager', email: 'fleet.audit@swiftride.ph', name: 'Fleet Controller' },
-            ].map((preset) => (
-              <button
-                key={preset.role}
-                type="button"
-                onClick={() =>
-                  handleQuickRole(
-                    preset.role as any,
-                    preset.email,
-                    preset.name
-                  )
-                }
-                className={`py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all text-center ${
-                  selectedRole === preset.role
-                    ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20 ring-1 ring-amber-400'
-                    : 'bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white'
-                }`}
-              >
-                {preset.role.split(' ')[0]}
-              </button>
-            ))}
+        {/* Secure Authentication Header */}
+        <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-2xl flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-xs font-black text-white block">Administrative Portal Login</span>
+            <span className="text-[11px] text-slate-400">Multi-Role Executive & Operational Console</span>
           </div>
+          <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-1 rounded-full font-bold flex items-center gap-1">
+            <Shield className="w-3 h-3" />
+            Hashed Auth
+          </span>
         </div>
+
+        {errorMsg && (
+          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs font-medium flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleLogin} className="space-y-4">
@@ -109,16 +120,26 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@swiftride.ph"
+                placeholder="e.g. admin@swiftride.ph"
                 className="w-full bg-[#080c14] border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-medium"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-              Passcode
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                Passcode
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowResetModal(true)}
+                className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1"
+              >
+                <HelpCircle className="w-3 h-3" />
+                <span>Forgot password?</span>
+              </button>
+            </div>
             <div className="relative">
               <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input
@@ -126,7 +147,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
+                placeholder="Enter account password"
                 className="w-full bg-[#080c14] border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-medium font-mono"
               />
             </div>
@@ -161,6 +182,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </span>
         </div>
       </div>
+
+      {/* Force Password Change Modal */}
+      <ForcePasswordChangeModal
+        isOpen={showForceChangeModal}
+        onSuccess={handleForceChangeSuccess}
+      />
+
+      {/* Request Password Reset Modal */}
+      <RequestPasswordResetModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+      />
     </div>
   );
 };

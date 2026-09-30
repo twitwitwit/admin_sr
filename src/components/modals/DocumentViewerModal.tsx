@@ -351,6 +351,16 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
             {documents.map((doc, idx) => {
               const status = documentStatuses[doc.id]?.status || doc.status;
               const isCurrent = idx === currentIndex;
+              const shortLabel =
+                doc.requirementType === 'LICENSE_FRONT' || doc.type === 'license'
+                  ? 'License Front'
+                  : doc.requirementType === 'LICENSE_BACK' || doc.type === 'licenseBack'
+                  ? 'License Back'
+                  : doc.requirementType === 'NBI' || doc.type === 'nbiClearance'
+                  ? 'NBI'
+                  : doc.requirementType === 'ORCR' || doc.type === 'orCr'
+                  ? 'OR/CR'
+                  : 'Vehicle Photo';
               return (
                 <button
                   key={doc.id}
@@ -369,10 +379,12 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                   ) : status === 'REJECTED' ? (
                     <AlertTriangle className="w-3 h-3 text-red-400" />
-                  ) : (
+                  ) : doc.fileUrl ? (
                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-slate-600"></span>
                   )}
-                  <span>{doc.type === 'license' ? 'License' : doc.type === 'orCr' ? 'OR/CR' : doc.type === 'nbiClearance' ? 'NBI' : doc.type === 'ltfrbFranchise' ? 'LTFRB' : 'Unit'}</span>
+                  <span>{shortLabel}</span>
                 </button>
               );
             })}
@@ -432,6 +444,13 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
               {/* Metadata Fields Card */}
               <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-2.5 text-xs">
                 <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                  <span className="text-slate-400">Requirement Type</span>
+                  <span className="font-mono font-bold text-amber-400 text-right">
+                    {currentDoc.requirementType || currentDoc.type}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                   <span className="text-slate-400">Issuing Agency</span>
                   <span className="font-bold text-white text-right">{currentDoc.issuingAgency || 'Gov Agency'}</span>
                 </div>
@@ -442,14 +461,29 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                  <span className="text-slate-400">Issue Date</span>
-                  <span className="font-mono text-slate-200">{currentDoc.issueDate || 'Recent'}</span>
+                  <span className="text-slate-400">Photo Status</span>
+                  <span className={`font-mono font-bold ${currentDoc.fileUrl ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {currentDoc.fileUrl ? 'Uploaded' : 'Not Uploaded Yet'}
+                  </span>
                 </div>
 
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                  <span className="text-slate-400">Validity Expiration</span>
-                  <span className="font-mono font-bold text-emerald-400">{currentDoc.expiryDate || 'Valid'}</span>
-                </div>
+                {currentDoc.uploadedFileName && (
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <span className="text-slate-400">Uploaded File Name</span>
+                    <span className="font-mono text-emerald-300 font-bold truncate max-w-[180px]" title={currentDoc.uploadedFileName}>
+                      {currentDoc.uploadedFileName}
+                    </span>
+                  </div>
+                )}
+
+                {currentDoc.uploadedDetails && (
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <span className="text-slate-400">Driver App Details</span>
+                    <span className="font-mono text-amber-300 font-bold truncate max-w-[180px]" title={currentDoc.uploadedDetails}>
+                      {currentDoc.uploadedDetails}
+                    </span>
+                  </div>
+                )}
 
                 {currentDoc.notes && (
                   <div className="pt-1">
@@ -476,7 +510,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                   </label>
                   <label className="flex items-center gap-2 p-1.5 rounded-lg bg-black/30 cursor-pointer hover:bg-black/50">
                     <input type="checkbox" defaultChecked className="rounded text-amber-500 focus:ring-0" />
-                    <span>Not expired and satisfies LTFRB validity window</span>
+                    <span>Not expired and satisfies system validity window</span>
                   </label>
                 </div>
               </div>
@@ -503,7 +537,9 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
 
                 <button
                   onClick={handleVerifyCurrentDoc}
-                  className="px-3 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-black rounded-xl text-xs shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5"
+                  disabled={!currentDoc.fileUrl}
+                  title={!currentDoc.fileUrl ? 'Photo must be uploaded before verifying' : 'Mark requirement photo as valid'}
+                  className="px-3 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-black rounded-xl text-xs shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Check className="w-3.5 h-3.5 stroke-[3]" />
                   <span>Mark as Valid</span>
@@ -524,13 +560,22 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                   {onApproveDriver && (
                     <button
                       onClick={() => {
+                        if (documents.filter((d) => Boolean(d.fileUrl)).length < 5) return;
                         onApproveDriver();
                         onClose();
                       }}
-                      className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-black rounded-xl text-xs shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-1.5"
+                      disabled={documents.filter((d) => Boolean(d.fileUrl)).length < 5}
+                      title={
+                        documents.filter((d) => Boolean(d.fileUrl)).length < 5
+                          ? `All 5 requirement photos must be uploaded (${documents.filter((d) => Boolean(d.fileUrl)).length}/5 uploaded) before verifying requirements`
+                          : 'Verify all 5 requirement photos'
+                      }
+                      className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-black rounded-xl text-xs shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                      <span>COMPLETE AUDIT & APPROVE FLEET DRIVER</span>
+                      <span>
+                        VERIFY REQUIREMENTS ({documents.filter((d) => Boolean(d.fileUrl)).length}/5)
+                      </span>
                     </button>
                   )}
                 </div>

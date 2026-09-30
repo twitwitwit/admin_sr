@@ -1,15 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, ShieldAlert, Car, Users, CalendarDays, HelpCircle, ArrowRight } from 'lucide-react';
+import { Search, X, ArrowRight } from 'lucide-react';
 import { useRealtimeDb } from '../context/RealtimeDbContext';
-import { NavTab } from '../types';
+import { NavTab, Driver, Passenger, Booking } from '../types';
+import { getFallbackAvatarUrl } from '../utils/imageHelpers';
+import {
+  formatHumanReadableDriverId,
+  formatHumanReadablePassengerId,
+  formatHumanReadableSosId,
+  formatHumanReadableTicketId,
+} from '../utils/idHelpers';
+import { formatHumanReadableTripId } from '../utils/tripHelpers';
 
 interface GlobalSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigate: (tab: NavTab, targetId?: string) => void;
+  onInspectDriver?: (driver: Driver) => void;
+  onInspectPassenger?: (passenger: Passenger) => void;
+  onInspectBooking?: (booking: Booking) => void;
 }
 
-export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, onClose, onNavigate }) => {
+export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
+  isOpen,
+  onClose,
+  onNavigate,
+  onInspectDriver,
+  onInspectPassenger,
+  onInspectBooking,
+}) => {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const { passengers, drivers, bookings, emergencyAlerts, tickets } = useRealtimeDb();
@@ -24,13 +42,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        if (isOpen) onClose();
-        else {
-          // Trigger open via document event or props
-        }
-      } else if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen) {
         onClose();
       }
     };
@@ -46,6 +58,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   const matchedSOS = emergencyAlerts.filter(
     (e) =>
       e.id.toLowerCase().includes(q) ||
+      formatHumanReadableSosId(e.id).toLowerCase().includes(q) ||
       e.userName.toLowerCase().includes(q) ||
       e.location.name.toLowerCase().includes(q) ||
       e.type.toLowerCase().includes(q)
@@ -54,6 +67,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   const matchedDrivers = drivers.filter(
     (d) =>
       d.name.toLowerCase().includes(q) ||
+      d.id.toLowerCase().includes(q) ||
+      formatHumanReadableDriverId(d.id).toLowerCase().includes(q) ||
       d.plateNumber.toLowerCase().includes(q) ||
       d.phone.includes(q) ||
       d.vehicleDetails.toLowerCase().includes(q)
@@ -62,6 +77,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   const matchedPassengers = passengers.filter(
     (p) =>
       p.name.toLowerCase().includes(q) ||
+      p.id.toLowerCase().includes(q) ||
+      formatHumanReadablePassengerId(p.id).toLowerCase().includes(q) ||
       p.email.toLowerCase().includes(q) ||
       p.phone.includes(q)
   );
@@ -69,6 +86,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   const matchedBookings = bookings.filter(
     (b) =>
       b.id.toLowerCase().includes(q) ||
+      formatHumanReadableTripId(b.id).toLowerCase().includes(q) ||
       b.passenger.name.toLowerCase().includes(q) ||
       b.route.pickup.toLowerCase().includes(q) ||
       b.route.dropoff.toLowerCase().includes(q)
@@ -77,6 +95,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   const matchedTickets = tickets.filter(
     (t) =>
       t.id.toLowerCase().includes(q) ||
+      formatHumanReadableTicketId(t.id).toLowerCase().includes(q) ||
       t.subject.toLowerCase().includes(q) ||
       t.userName.toLowerCase().includes(q)
   );
@@ -113,7 +132,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
           {query && (
             <button
               onClick={() => setQuery('')}
-              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -129,11 +148,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
             <div className="text-center py-8">
               <p className="text-xs text-slate-400 font-medium">Quick suggestions to explore:</p>
               <div className="flex flex-wrap gap-2 justify-center mt-3">
-                {['SOS-9021', 'Juan Dela Cruz', 'SM North EDSA', 'NDA 1234', '#TRIP-1024'].map((sug) => (
+                {['SOS-9021', 'Juan Dela Cruz', 'SM North EDSA', 'NDA 1234', 'SWD-1204'].map((sug) => (
                   <button
                     key={sug}
                     onClick={() => setQuery(sug)}
-                    className="px-2.5 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+                    className="px-2.5 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
                   >
                     {sug}
                   </button>
@@ -150,13 +169,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
               {/* Emergency Alerts */}
               {matchedSOS.length > 0 && (
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-red-400 flex items-center gap-1 mb-2">
-                    <ShieldAlert className="w-3 h-3" /> Emergency Alerts ({matchedSOS.length})
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-red-400 block mb-2">
+                    Emergency Alerts ({matchedSOS.length})
                   </span>
                   <div className="space-y-1.5">
-                    {matchedSOS.map((sos) => (
+                    {matchedSOS.map((sos, idx) => (
                       <div
-                        key={sos.id}
+                        key={`search-sos-${sos.id || 'sos'}-${idx}`}
                         onClick={() => {
                           onNavigate('emergency', sos.id);
                           onClose();
@@ -165,7 +184,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-red-300">{sos.id}</span>
+                            <span className="text-xs font-black text-red-300 font-mono">
+                              {formatHumanReadableSosId(sos.id)}
+                            </span>
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-bold">
                               {sos.type}
                             </span>
@@ -184,24 +205,36 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
               {/* Drivers */}
               {matchedDrivers.length > 0 && (
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1 mb-2">
-                    <Car className="w-3 h-3" /> Drivers ({matchedDrivers.length})
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block mb-2">
+                    Drivers ({matchedDrivers.length})
                   </span>
                   <div className="space-y-1.5">
-                    {matchedDrivers.map((drv) => (
+                    {matchedDrivers.map((drv, idx) => (
                       <div
-                        key={drv.id}
+                        key={`search-drv-${drv.id || 'drv'}-${drv.email || idx}-${idx}`}
                         onClick={() => {
                           onNavigate('drivers', drv.id);
+                          if (onInspectDriver) onInspectDriver(drv);
                           onClose();
                         }}
                         className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl hover:bg-slate-800/80 cursor-pointer flex items-center justify-between transition-colors group"
                       >
                         <div className="flex items-center gap-3">
-                          <img src={drv.avatar} alt={drv.name} className="w-8 h-8 rounded-full object-cover" />
+                          <img
+                            src={drv.avatar || getFallbackAvatarUrl(drv.name || drv.id)}
+                            alt={drv.name}
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              const fallback = getFallbackAvatarUrl(drv.name || drv.id);
+                              if (target.src !== fallback) target.src = fallback;
+                            }}
+                            className="w-8 h-8 rounded-full object-cover bg-slate-800 border border-slate-700"
+                          />
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-white">{drv.name}</span>
+                              <span className="text-xs font-bold text-white group-hover:text-amber-400 transition-colors">
+                                {drv.name}
+                              </span>
                               <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
                                 {drv.plateNumber}
                               </span>
@@ -221,23 +254,35 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
               {/* Passengers */}
               {matchedPassengers.length > 0 && (
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 mb-2">
-                    <Users className="w-3 h-3" /> Passengers ({matchedPassengers.length})
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 block mb-2">
+                    Passengers ({matchedPassengers.length})
                   </span>
                   <div className="space-y-1.5">
-                    {matchedPassengers.map((pas) => (
+                    {matchedPassengers.map((pas, idx) => (
                       <div
-                        key={pas.id}
+                        key={`search-pas-${pas.id || 'pas'}-${pas.email || idx}-${idx}`}
                         onClick={() => {
                           onNavigate('passengers', pas.id);
+                          if (onInspectPassenger) onInspectPassenger(pas);
                           onClose();
                         }}
                         className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl hover:bg-slate-800/80 cursor-pointer flex items-center justify-between transition-colors group"
                       >
                         <div className="flex items-center gap-3">
-                          <img src={pas.avatar} alt={pas.name} className="w-8 h-8 rounded-full object-cover" />
+                          <img
+                            src={pas.avatar || getFallbackAvatarUrl(pas.name || pas.id)}
+                            alt={pas.name}
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              const fallback = getFallbackAvatarUrl(pas.name || pas.id);
+                              if (target.src !== fallback) target.src = fallback;
+                            }}
+                            className="w-8 h-8 rounded-full object-cover bg-slate-800 border border-slate-700"
+                          />
                           <div>
-                            <span className="text-xs font-bold text-white block">{pas.name}</span>
+                            <span className="text-xs font-bold text-white group-hover:text-cyan-400 transition-colors block">
+                              {pas.name}
+                            </span>
                             <span className="text-[11px] text-slate-400 font-mono">
                               {pas.phone} • {pas.email}
                             </span>
@@ -253,22 +298,25 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
               {/* Bookings */}
               {matchedBookings.length > 0 && (
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1 mb-2">
-                    <CalendarDays className="w-3 h-3" /> Bookings & Trips ({matchedBookings.length})
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block mb-2">
+                    Bookings & Trips ({matchedBookings.length})
                   </span>
                   <div className="space-y-1.5">
-                    {matchedBookings.map((b) => (
+                    {matchedBookings.map((b, idx) => (
                       <div
-                        key={b.id}
+                        key={`search-book-${b.id || 'b'}-${idx}`}
                         onClick={() => {
                           onNavigate('bookings', b.id);
+                          if (onInspectBooking) onInspectBooking(b);
                           onClose();
                         }}
                         className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl hover:bg-slate-800/80 cursor-pointer flex items-center justify-between transition-colors group"
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-amber-400 font-mono">{b.id}</span>
+                            <span className="text-xs font-bold text-amber-400 font-mono">
+                              {formatHumanReadableTripId(b.id)}
+                            </span>
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-bold">
                               {b.status}
                             </span>
@@ -287,13 +335,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
               {/* Tickets */}
               {matchedTickets.length > 0 && (
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1 mb-2">
-                    <HelpCircle className="w-3 h-3" /> Support Tickets ({matchedTickets.length})
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-pink-400 block mb-2">
+                    Support Tickets ({matchedTickets.length})
                   </span>
                   <div className="space-y-1.5">
-                    {matchedTickets.map((t) => (
+                    {matchedTickets.map((t, idx) => (
                       <div
-                        key={t.id}
+                        key={`search-ticket-${t.id || 't'}-${idx}`}
                         onClick={() => {
                           onNavigate('support', t.id);
                           onClose();
@@ -302,7 +350,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-pink-400 font-mono">{t.id}</span>
+                            <span className="text-xs font-bold text-pink-400 font-mono">
+                              {formatHumanReadableTicketId(t.id)}
+                            </span>
                             <span className="text-xs font-bold text-white">{t.subject}</span>
                           </div>
                           <p className="text-[11px] text-slate-400 mt-0.5">

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 import { SupportTicket } from '../../types';
+import { formatHumanReadableTicketId } from '../../utils/idHelpers';
 
 interface SupportViewProps {
   onOpenCall: (name: string, phone: string, role: string) => void;
@@ -26,6 +27,10 @@ export const SupportView: React.FC<SupportViewProps> = ({ onOpenCall }) => {
   const [replyText, setReplyText] = useState('');
   const [refundAmount, setRefundAmount] = useState('50');
 
+  const liveActiveTicket = activeTicket
+    ? tickets.find((t) => t.id === activeTicket.id) || activeTicket
+    : null;
+
   const filteredTickets = tickets.filter((t) => {
     if (filterTab === 'ALL') return true;
     return t.status === filterTab;
@@ -33,25 +38,21 @@ export const SupportView: React.FC<SupportViewProps> = ({ onOpenCall }) => {
 
   const handleSendReply = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeTicket || !replyText.trim()) return;
+    if (!liveActiveTicket || !replyText.trim()) return;
 
-    replyToTicket(activeTicket.id, replyText);
+    replyToTicket(liveActiveTicket.id, replyText);
     setReplyText('');
-
-    // Update active modal ticket instance
-    const updated = tickets.find((t) => t.id === activeTicket.id);
-    if (updated) setActiveTicket(updated);
   };
 
   const handleIssueRefund = () => {
-    if (!activeTicket) return;
+    if (!liveActiveTicket) return;
     const amount = Number(refundAmount) || 50;
     replyToTicket(
-      activeTicket.id,
+      liveActiveTicket.id,
       `[ADMIN ACTION] Customer courtesy refund of ₱${amount.toFixed(2)} has been credited to wallet.`,
       'RESOLVED'
     );
-    resolveTicket(activeTicket.id);
+    resolveTicket(liveActiveTicket.id);
   };
 
   return (
@@ -88,9 +89,9 @@ export const SupportView: React.FC<SupportViewProps> = ({ onOpenCall }) => {
 
       {/* Tickets List */}
       <div className="space-y-4">
-        {filteredTickets.map((ticket) => (
+        {filteredTickets.map((ticket, index) => (
           <div
-            key={ticket.id}
+            key={`support-ticket-${ticket.id || 't'}-${index}`}
             className={`p-6 bg-[#0c121e] rounded-3xl border transition-all shadow-xl ${
               ticket.status === 'OPEN'
                 ? 'border-amber-500/50 shadow-amber-950/10'
@@ -100,7 +101,7 @@ export const SupportView: React.FC<SupportViewProps> = ({ onOpenCall }) => {
             {/* Top row */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
-                <span className="text-sm font-mono font-black text-amber-400">{ticket.id}</span>
+                <span className="text-sm font-mono font-black text-amber-400">{formatHumanReadableTicketId(ticket.id)}</span>
                 <span
                   className={`text-[10px] px-2.5 py-0.5 rounded-full font-black uppercase ${
                     ticket.priority === 'HIGH'
@@ -170,33 +171,57 @@ export const SupportView: React.FC<SupportViewProps> = ({ onOpenCall }) => {
       </div>
 
       {/* Ticket Conversation & Resolution Modal */}
-      {activeTicket && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-2xl bg-[#0c121e] border border-slate-700/80 rounded-3xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
+      {liveActiveTicket && (
+        <div
+          onClick={() => setActiveTicket(null)}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-2xl bg-[#0c121e] border border-slate-700/80 rounded-3xl p-6 shadow-2xl flex flex-col max-h-[90vh]"
+          >
             {/* Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-mono font-black text-amber-400">
-                    {activeTicket.id}
+                    {formatHumanReadableTicketId(liveActiveTicket.id)}
                   </span>
-                  <span className="text-sm font-black text-white">{activeTicket.subject}</span>
+                  <span className="text-sm font-black text-white">{liveActiveTicket.subject}</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Raised by {activeTicket.userName} ({activeTicket.userRole})
+                  Raised by {liveActiveTicket.userName} ({liveActiveTicket.userRole})
                 </p>
               </div>
-              <button
-                onClick={() => setActiveTicket(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {liveActiveTicket.userPhone && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenCall(
+                        liveActiveTicket.userName,
+                        liveActiveTicket.userPhone!,
+                        liveActiveTicket.userRole
+                      )
+                    }
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Call User</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setActiveTicket(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Messages Thread */}
             <div className="flex-1 overflow-y-auto py-4 space-y-3 pr-1 max-h-80">
-              {activeTicket.messages.map((msg) => (
+              {liveActiveTicket.messages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`p-3.5 rounded-2xl text-xs max-w-[85%] ${
@@ -228,7 +253,7 @@ export const SupportView: React.FC<SupportViewProps> = ({ onOpenCall }) => {
                 />
                 <button
                   type="submit"
-                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs rounded-xl flex items-center gap-1.5 transition-colors"
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Send</span>
@@ -251,7 +276,7 @@ export const SupportView: React.FC<SupportViewProps> = ({ onOpenCall }) => {
                   <button
                     type="button"
                     onClick={handleIssueRefund}
-                    className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 text-xs font-bold rounded-lg transition-colors"
+                    className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 text-xs font-bold rounded-lg transition-colors cursor-pointer"
                   >
                     Issue & Resolve
                   </button>
@@ -260,10 +285,10 @@ export const SupportView: React.FC<SupportViewProps> = ({ onOpenCall }) => {
                 <button
                   type="button"
                   onClick={() => {
-                    resolveTicket(activeTicket.id);
+                    resolveTicket(liveActiveTicket.id);
                     setActiveTicket(null);
                   }}
-                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors"
+                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors cursor-pointer"
                 >
                   Mark as Resolved
                 </button>

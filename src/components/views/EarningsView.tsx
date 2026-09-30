@@ -1,14 +1,6 @@
 import React from 'react';
 import {
-  DollarSign,
-  TrendingUp,
-  Percent,
-  Download,
-  Wallet,
   ArrowUpRight,
-  CheckCircle2,
-  Clock,
-  Car,
 } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 
@@ -56,16 +48,11 @@ export const EarningsView: React.FC = () => {
 
   return (
     <div id="earnings-view-root" className="space-y-6 pb-12">
-      {/* 3 Large KPI Summary Cards */}
+      {/* 3 Large KPI Summary Cards without unnecessary decorative icons */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Gross Volume */}
         <div className="p-6 bg-[#0c121e] border border-slate-800 rounded-3xl shadow-xl flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Gross Platform Volume</span>
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
-              <DollarSign className="w-5 h-5" />
-            </div>
-          </div>
+          <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Gross Platform Volume</span>
           <div className="mt-4">
             <span className="text-3xl font-black text-white font-mono">₱2,450,000.00</span>
             <div className="flex items-center gap-1 mt-1 text-xs font-bold text-emerald-400">
@@ -77,12 +64,7 @@ export const EarningsView: React.FC = () => {
 
         {/* Platform Commission */}
         <div className="p-6 bg-[#0c121e] border border-slate-800 rounded-3xl shadow-xl flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Platform Commission (15%)</span>
-            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400">
-              <Percent className="w-5 h-5" />
-            </div>
-          </div>
+          <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Platform Commission (15%)</span>
           <div className="mt-4">
             <span className="text-3xl font-black text-amber-400 font-mono">₱367,500.00</span>
             <span className="text-xs font-bold text-slate-400 mt-1 block">
@@ -93,12 +75,7 @@ export const EarningsView: React.FC = () => {
 
         {/* Driver Partner Payouts */}
         <div className="p-6 bg-[#0c121e] border border-slate-800 rounded-3xl shadow-xl flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Driver Partner Payouts (85%)</span>
-            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400">
-              <Wallet className="w-5 h-5" />
-            </div>
-          </div>
+          <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Driver Partner Payouts (85%)</span>
           <div className="mt-4">
             <span className="text-3xl font-black text-cyan-400 font-mono">₱2,082,500.00</span>
             <span className="text-xs font-bold text-slate-400 mt-1 block">
@@ -118,10 +95,9 @@ export const EarningsView: React.FC = () => {
 
           <button
             onClick={() => exportCsvData('earnings')}
-            className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 self-start sm:self-auto"
+            className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all self-start sm:self-auto cursor-pointer"
           >
-            <Download className="w-4 h-4 stroke-[3]" />
-            <span>DOWNLOAD FINANCIAL LEDGER</span>
+            DOWNLOAD FINANCIAL LEDGER
           </button>
         </div>
 

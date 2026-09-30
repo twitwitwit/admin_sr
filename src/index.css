@@ -1,14 +1,25 @@
 @import "tailwindcss";
 
 @layer base {
-  * {
+  body {
+    background-color: #070b13;
+    color: #f1f5f9;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    overflow-x: hidden;
+    letter-spacing: 0.005em;
+  }
+
+  h1, h2, h3, h4, .font-display {
     font-family: 'Montserrat', sans-serif;
   }
-  body {
-    background-color: #080c14;
-    color: #f1f5f9;
-    font-family: 'Montserrat', sans-serif;
-    overflow-x: hidden;
+
+  .font-mono, code, kbd, pre {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -31,14 +42,9 @@
   background: #334155;
 }
 
-/* Leaflet map dark mode invert filter for sleek dark UI radar */
-.dark-tiles .leaflet-tile-pane {
-  filter: brightness(0.7) invert(1) contrast(3) hue-rotate(200deg) saturate(0.35) brightness(0.75);
-}
-
 .leaflet-container {
-  background: #080d1a !important;
-  font-family: inherit !important;
+  background: #e2e8f0 !important;
+  font-family: 'Montserrat', sans-serif !important;
 }
 
 /* Radar pulse animation */

@@ -1,22 +1,16 @@
 import React, { useState } from 'react';
 import {
-  Car,
   Search,
-  Download,
   Star,
-  Eye,
-  Check,
-  X,
-  Phone,
-  Mail,
   ShieldCheck,
-  ShieldAlert,
-  AlertCircle,
   Clock,
-  RefreshCw,
+  Database,
 } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 import { Driver, DriverStatus } from '../../types';
+import { formatHumanReadableDriverId } from '../../utils/idHelpers';
+import { getFallbackAvatarUrl, isCustomUploadedAvatar } from '../../utils/imageHelpers';
+import { FirestoreDatabaseInspector } from '../database/FirestoreDatabaseInspector';
 
 interface DriversViewProps {
   onInspectDriver: (driver: Driver) => void;
@@ -25,7 +19,7 @@ interface DriversViewProps {
 
 export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpenCall }) => {
   const { drivers, approveDriver, rejectDriver, exportCsvData, refreshCloudData } = useRealtimeDb();
-  const [activeTab, setActiveTab] = useState<'active' | 'pending'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'database'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -61,49 +55,42 @@ export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpe
       {/* Alert Banner when Requirements are Pending / Resubmitted */}
       {pendingDrivers.length > 0 && (
         <div className="p-4 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg shadow-amber-500/5">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-500 text-black font-black flex items-center justify-center animate-pulse">
-              <ShieldAlert className="w-5 h-5" />
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
+                Action Required: {pendingDrivers.length} Driver Verification{pendingDrivers.length > 1 ? 's' : ''} Awaiting Administrative Audit
+              </span>
+              <span className="text-[10px] bg-amber-500 text-black font-black px-2 py-0.5 rounded-full uppercase">
+                Live Queue
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
-                  Action Required: {pendingDrivers.length} Driver Verification{pendingDrivers.length > 1 ? 's' : ''} Awaiting Administrative Audit
-                </span>
-                <span className="text-[10px] bg-amber-500 text-black font-black px-2 py-0.5 rounded-full uppercase">
-                  Live Queue
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Driver partners have submitted or resubmitted credentials (LTFRB, NBI, OR/CR, or license) via the mobile app.
-              </p>
-            </div>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Driver partners have submitted or resubmitted credentials (NBI, OR/CR, or license) via the mobile app.
+            </p>
           </div>
           <div className="flex items-center gap-2 self-end sm:self-center">
             <button
               onClick={() => setActiveTab('pending')}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black rounded-xl shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 whitespace-nowrap"
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black rounded-xl shadow-md shadow-amber-500/20 transition-all whitespace-nowrap cursor-pointer"
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Review Pending Audits ({pendingDrivers.length})</span>
+              Review Pending Audits ({pendingDrivers.length})
             </button>
           </div>
         </div>
       )}
 
       {/* Top Controls & Tab Selector */}
-      <div className="p-4 bg-[#0c121e] border border-slate-800 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-4 bg-[#0c121e] border border-slate-800 rounded-2xl shadow-lg flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Fleet vs Pending Applications Tabs */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
           <button
             onClick={() => setActiveTab('active')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
               activeTab === 'active'
                 ? 'bg-amber-500 text-black font-extrabold shadow-md shadow-amber-500/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Car className="w-4 h-4" />
             <span>Active Fleet</span>
             <span
               className={`text-[10px] px-2 py-0.5 rounded-full ${
@@ -116,13 +103,12 @@ export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpe
 
           <button
             onClick={() => setActiveTab('pending')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
               activeTab === 'pending'
                 ? 'bg-amber-500 text-black font-extrabold shadow-md shadow-amber-500/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
             <span>Pending Applications & Audits</span>
             {pendingDrivers.length > 0 && (
               <span
@@ -134,42 +120,55 @@ export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpe
               </span>
             )}
           </button>
+
+          <button
+            onClick={() => setActiveTab('database')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeTab === 'database'
+                ? 'bg-amber-500 text-black font-extrabold shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Firestore Database</span>
+          </button>
         </div>
 
         {/* Search, Cloud Sync & Export */}
-        <div className="flex items-center gap-3">
-          <div className="relative">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3">
+          <div className="relative flex-1 sm:flex-initial min-w-[200px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by driver, plate, vehicle..."
-              className="bg-[#080c14] border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-medium w-64"
+              className="bg-[#080c14] border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-medium w-full sm:w-64"
             />
           </div>
 
           <button
             onClick={handleManualSync}
             disabled={isSyncing}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-2 border border-slate-700 transition-colors disabled:opacity-50"
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors disabled:opacity-50 cursor-pointer whitespace-nowrap"
             title="Sync latest submissions from Firestore"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline">{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
+            <span>{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
           </button>
 
           <button
             onClick={() => exportCsvData('drivers')}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-2 border border-slate-700 transition-colors"
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer whitespace-nowrap"
           >
-            <Download className="w-3.5 h-3.5 text-amber-400" />
-            <span>Export Fleet</span>
+            Export Fleet
           </button>
         </div>
       </div>
 
-      {/* Drivers Table */}
+      {activeTab === 'database' ? (
+        <FirestoreDatabaseInspector />
+      ) : (
+      /* Drivers Table */
       <div className="bg-[#0c121e] border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -200,134 +199,163 @@ export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpe
                   </td>
                 </tr>
               ) : (
-                currentList.map((driver) => (
-                  <tr key={driver.id} className="hover:bg-slate-900/50 transition-colors group">
+                currentList.map((driver, index) => (
+                  <tr
+                    key={`driver-${driver.id || 'drv'}-${driver.email || index}-${index}`}
+                    onClick={() => onInspectDriver(driver)}
+                    title="Click to open Driver Profile & Uploaded App Photos"
+                    className="hover:bg-slate-900/60 transition-colors group cursor-pointer"
+                  >
                     {/* Driver info */}
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={driver.avatar}
-                          alt={driver.name}
-                          className="w-10 h-10 rounded-xl object-cover ring-1 ring-amber-500/30"
-                        />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-white text-sm block">{driver.name}</span>
-                            {driver.isResubmission && (
-                              <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[9px] font-black rounded uppercase animate-pulse">
-                                Resubmitted
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-slate-400 font-mono">{driver.phone}</span>
+                    <td className="py-3.5 px-6">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white group-hover:text-amber-400 transition-colors text-sm block">{driver.name}</span>
+                          <span className="text-[11px] font-mono text-amber-400">{formatHumanReadableDriverId(driver.id)}</span>
+                          {driver.isResubmission && (
+                            <span className="text-[10px] font-semibold text-amber-300">
+                              · Resubmitted
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          <span className="text-[11px] text-slate-400 font-mono tabular-nums">{driver.phone}</span>
+                          {(driver.uploadedRequirementsCount ?? 0) > 0 ? (
+                            <span
+                              className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                                (driver.uploadedRequirementsCount ?? 0) >= 5
+                                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                                  : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                              }`}
+                            >
+                              {driver.uploadedRequirementsCount}/5 Photos Uploaded
+                            </span>
+                          ) : driver.isPendingAudit ? (
+                            <span className="text-[10px] font-mono text-slate-400 bg-slate-800/80 border border-slate-700 px-1.5 py-0.5 rounded">
+                              0/5 Photos Uploaded
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </td>
 
                     {/* Vehicle */}
-                    <td className="py-4 px-6">
+                    <td className="py-3.5 px-6">
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-slate-200">{driver.vehicleDetails}</span>
-                        <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded w-fit">
+                        <span className="font-medium text-slate-200">{driver.vehicleDetails}</span>
+                        <span className="text-xs font-mono font-bold text-amber-400">
                           {driver.plateNumber}
                         </span>
                       </div>
                     </td>
 
                     {/* City */}
-                    <td className="py-4 px-6">
+                    <td className="py-3.5 px-6">
                       <span className="text-slate-300 font-medium">{driver.city}</span>
                     </td>
 
                     {/* Rating & Trips */}
-                    <td className="py-4 px-6">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1 font-bold text-amber-400">
-                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                          <span>{driver.rating.toFixed(1)}</span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {driver.completedTrips} trips
-                        </span>
+                    <td className="py-3.5 px-6">
+                      <div className="flex items-center gap-1.5 font-mono tabular-nums">
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        <span className="font-bold text-amber-400">{driver.rating.toFixed(2)}</span>
+                        <span className="text-slate-600" aria-hidden="true">·</span>
+                        <span className="text-xs text-slate-400">{driver.completedTrips} trips</span>
                       </div>
                     </td>
 
                     {/* Acceptance or Submission info */}
-                    <td className="py-4 px-6">
+                    <td className="py-3.5 px-6">
                       {activeTab === 'pending' || driver.isPendingAudit ? (
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[11px] font-semibold text-amber-400 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             <span>{driver.submittedDate || 'Pending Audit'}</span>
                           </span>
-                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                              License
+                          {driver.seminarAppointment?.bookingReference ? (
+                            <span className="text-[11px] text-emerald-400 font-mono">
+                              Seminar: {driver.seminarAppointment.bookingReference} ({driver.seminarAppointment.date || 'Booked'})
                             </span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                              OR/CR
-                            </span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                              NBI
-                            </span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                              LTFRB
-                            </span>
-                          </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                              <span>License</span>
+                              <span aria-hidden="true">·</span>
+                              <span>OR/CR</span>
+                              <span aria-hidden="true">·</span>
+                              <span>NBI</span>
+                              <span aria-hidden="true">·</span>
+                              <span>Vehicle</span>
+                            </div>
+                          )}
                         </div>
                       ) : (
-                        <span className="font-mono font-bold text-emerald-400 text-sm">
+                        <span className="font-mono tabular-nums font-bold text-emerald-400 text-xs">
                           {driver.acceptanceRate}%
                         </span>
                       )}
                     </td>
 
                     {/* Status */}
-                    <td className="py-4 px-6">
+                    <td className="py-3.5 px-6">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
                           driver.isPendingAudit
-                            ? driver.isResubmission
-                              ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
-                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse'
+                            ? 'text-amber-400'
+                            : driver.isVerified && !driver.hasAttendedSeminar
+                            ? 'text-emerald-300'
                             : driver.status === 'ONLINE'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            ? 'text-emerald-400'
                             : driver.status === 'ON TRIP'
-                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            ? 'text-amber-400'
                             : driver.status === 'OFFLINE'
-                            ? 'bg-slate-800 text-slate-400'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            ? 'text-slate-400'
+                            : 'text-rose-400'
                         }`}
                       >
-                        {driver.isPendingAudit
-                          ? driver.isResubmission
-                            ? 'RESUBMISSION'
-                            : 'PENDING AUDIT'
-                          : driver.status}
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            driver.isPendingAudit
+                              ? 'bg-amber-400 animate-pulse'
+                              : driver.status === 'ONLINE'
+                              ? 'bg-emerald-400'
+                              : driver.status === 'ON TRIP'
+                              ? 'bg-amber-400'
+                              : driver.status === 'OFFLINE'
+                              ? 'bg-slate-500'
+                              : 'bg-rose-500'
+                          }`}
+                        />
+                        <span>
+                          {driver.isPendingAudit
+                            ? driver.isResubmission
+                              ? 'Resubmission'
+                              : 'Pending Audit'
+                            : driver.isVerified && !driver.hasAttendedSeminar
+                            ? 'Awaiting Seminar'
+                            : driver.status}
+                        </span>
                       </span>
                     </td>
 
                     {/* Actions */}
-                    <td className="py-4 px-6 text-right">
+                    <td className="py-3.5 px-6 text-right">
                       {driver.isPendingAudit ? (
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => onInspectDriver(driver)}
-                            className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all shadow-md shadow-amber-500/20 flex items-center gap-1.5"
-                            title="Inspect Credentials & Documents Before Approval"
+                            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition-all cursor-pointer whitespace-nowrap"
+                            title="Open Slide-Over Dossier & Approve"
                           >
-                            <Eye className="w-3.5 h-3.5 stroke-[2.5]" />
-                            <span>Inspect Docs & Approve</span>
+                            Inspect & Approve
                           </button>
                         </div>
                       ) : (
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => onInspectDriver(driver)}
-                            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold transition-colors flex items-center gap-1"
+                            className="px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold transition-colors text-xs cursor-pointer border border-slate-700/80 whitespace-nowrap"
                           >
-                            <Eye className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Dossier & Docs</span>
+                            Open Dossier
                           </button>
                         </div>
                       )}
@@ -340,11 +368,12 @@ export const DriversView: React.FC<DriversViewProps> = ({ onInspectDriver, onOpe
         </div>
 
         {/* Footer info */}
-        <div className="p-4 bg-[#080c14] border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+        <div className="p-4 bg-[#080c14] border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-400">
           <span>Active registered units: 2,315 Fleet Drivers</span>
-          <span className="font-mono text-[11px] text-amber-400">LTFRB Compliant Network • Live Firestore Sync Active</span>
+          <span className="font-mono text-[11px] text-amber-400">Regulatory Compliant Network • Live Firestore Sync Active</span>
         </div>
       </div>
+      )}
     </div>
   );
 };

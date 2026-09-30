@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 import { BookingStatus } from '../../types';
+import { formatHumanReadableTripId } from '../../utils/tripHelpers';
 
 export const ReportsView: React.FC = () => {
   const { bookings, reports, generateReportDownload } = useRealtimeDb();
@@ -15,10 +16,11 @@ export const ReportsView: React.FC = () => {
   // Filtered ride data
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
-      // Search matching: ID, passenger, driver, pickup, dropoff
+      // Search matching: ID (both raw and human-readable), passenger, driver, pickup, dropoff
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const matchesId = b.id.toLowerCase().includes(query);
+        const readableId = formatHumanReadableTripId(b.id).toLowerCase();
+        const matchesId = b.id.toLowerCase().includes(query) || readableId.includes(query);
         const matchesPassenger = b.passenger.name.toLowerCase().includes(query) || b.passenger.phone.includes(query);
         const matchesDriver = b.driverAssigned?.name.toLowerCase().includes(query) || b.driverAssigned?.plateNumber.toLowerCase().includes(query);
         const matchesPickup = b.route.pickup.toLowerCase().includes(query);
@@ -78,12 +80,14 @@ export const ReportsView: React.FC = () => {
   // Handler for Exporting CSV for Administrative Review
   const handleDownloadCsv = () => {
     if (filteredBookings.length === 0) {
-      alert('No ride records available in the current filter to export.');
+      setDownloadSuccess('No ride records available in the current filter to export.');
+      setTimeout(() => setDownloadSuccess(null), 4000);
       return;
     }
 
     const headers = [
       'Trip ID',
+      'System Ref',
       'Date',
       'Time',
       'Status',
@@ -108,6 +112,7 @@ export const ReportsView: React.FC = () => {
     };
 
     const rows = filteredBookings.map((b) => [
+      escapeCsv(formatHumanReadableTripId(b.id)),
       escapeCsv(b.id),
       escapeCsv(b.date),
       escapeCsv(b.time),
@@ -373,11 +378,21 @@ export const ReportsView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
-                {filteredBookings.map((trip) => (
-                  <tr key={trip.id} className="hover:bg-slate-900/30 transition-colors">
+                {filteredBookings.map((trip, index) => (
+                  <tr key={`report-trip-${trip.id || 'trip'}-${index}`} className="hover:bg-slate-900/30 transition-colors">
                     <td className="py-3.5 px-6">
-                      <div className="font-bold text-amber-400">{trip.id}</div>
-                      <div className="text-[11px] text-slate-400">{trip.date} • {trip.time}</div>
+                      <div className="font-mono font-bold text-amber-400 text-xs">
+                        {formatHumanReadableTripId(trip.id)}
+                      </div>
+                      {trip.id && trip.id !== formatHumanReadableTripId(trip.id) && (
+                        <div
+                          className="text-[10px] text-slate-500 font-mono truncate max-w-[130px]"
+                          title={`System ID: ${trip.id}`}
+                        >
+                          Ref: {trip.id.length > 12 ? `${trip.id.slice(0, 8)}...` : trip.id}
+                        </div>
+                      )}
+                      <div className="text-[11px] text-slate-400 mt-0.5">{trip.date} • {trip.time}</div>
                     </td>
                     <td className="py-3.5 px-6">
                       <div className="font-bold text-white">{trip.passenger.name}</div>
@@ -434,7 +449,7 @@ export const ReportsView: React.FC = () => {
             System Compliance & Regulatory Packages
           </h4>
           <p className="text-xs text-slate-400 mt-0.5">
-            Archived monthly balance sheets, LTFRB compliance filings, and safety dispatch logs
+            Archived monthly balance sheets, regulatory compliance filings, and safety dispatch logs
           </p>
         </div>
 

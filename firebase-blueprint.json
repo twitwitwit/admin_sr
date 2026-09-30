@@ -1,5 +1,37 @@
 {
   "entities": {
+    "adminAccount": {
+      "title": "Admin Account",
+      "description": "Operational admin account record with role, avatar, and hashed credentials",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["Super Admin", "Fleet Manager", "Safety Dispatcher"] },
+        "avatar": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "mustChangePassword": { "type": "boolean" },
+        "createdAt": { "type": "number" },
+        "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] }
+      },
+      "required": ["id", "name", "email", "role", "passwordHash", "status"]
+    },
+    "passwordResetReport": {
+      "title": "Password Reset Report",
+      "description": "User password reset inquiry report submitted for Super Admin verification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "requestedAt": { "type": "number" },
+        "tempPasswordGenerated": { "type": "string" }
+      },
+      "required": ["id", "userEmail", "reason", "status", "requestedAt"]
+    },
     "emergencyAlert": {
       "title": "Emergency Alert",
       "description": "Real-time safety SOS emergency event with telemetry and dispatch log",
@@ -36,7 +68,13 @@
         "completedTrips": { "type": "number" },
         "acceptanceRate": { "type": "number" },
         "status": { "type": "string", "enum": ["ONLINE", "ON TRIP", "OFFLINE", "SUSPENDED"] },
-        "isPendingAudit": { "type": "boolean" }
+        "isPendingAudit": { "type": "boolean" },
+        "isVerified": { "type": "boolean" },
+        "requirementsVerified": { "type": "boolean" },
+        "hasAttendedSeminar": { "type": "boolean" },
+        "canAcceptRides": { "type": "boolean" },
+        "stage": { "type": "string" },
+        "applicationStatus": { "type": "string" }
       },
       "required": ["id", "name", "phone", "email", "plateNumber", "status"]
     },
@@ -66,6 +104,9 @@
         "date": { "type": "string" },
         "timestamp": { "type": "number" },
         "fare": { "type": "number" },
+        "surgeMultiplier": { "type": "number" },
+        "vehicleCategory": { "type": "string", "enum": ["4-WHEEL_TNVS", "2-WHEEL_MC"] },
+        "pricingMode": { "type": "string", "enum": ["UPFRONT", "METERED"] },
         "paymentMethod": { "type": "string" },
         "status": { "type": "string", "enum": ["REQUESTED", "ACCEPTED", "ARRIVING", "IN PROGRESS", "COMPLETED", "CANCELLED"] }
       },
@@ -122,6 +163,11 @@
         "perKmRate": { "type": "number" },
         "perMinRate": { "type": "number" },
         "surgeMultiplier": { "type": "number" },
+        "tnvsPricingMode": { "type": "string", "enum": ["UPFRONT", "METERED"] },
+        "mcBaseFare": { "type": "number" },
+        "mcPerKmRate": { "type": "number" },
+        "mcPerMinRate": { "type": "number" },
+        "mcSurgeMultiplier": { "type": "number" },
         "commissionRate": { "type": "number" },
         "autoPayoutThreshold": { "type": "number" },
         "speedAlertThresholdKmh": { "type": "number" }
@@ -130,17 +176,33 @@
     }
   },
   "firestore": {
+    "/adminAccounts/{accountId}": {
+      "schema": "adminAccount",
+      "description": "Collection of operational administrative accounts and credentials"
+    },
+    "/passwordResetReports/{requestId}": {
+      "schema": "passwordResetReport",
+      "description": "User password reset requests pending Super Admin verification"
+    },
     "/emergencyAlerts/{alertId}": {
       "schema": "emergencyAlert",
       "description": "Collection of emergency SOS alerts and real-time dispatch events"
     },
     "/drivers/{driverId}": {
       "schema": "driver",
-      "description": "Registered driver fleet records"
+      "description": "Registered driver fleet records, requirement arrays, and seminar appointments"
+    },
+    "/driverApplications/{driverId}": {
+      "schema": "driver",
+      "description": "Driver onboarding applications, uploaded requirement items, and seminar schedules"
     },
     "/passengers/{passengerId}": {
       "schema": "passenger",
-      "description": "Registered passenger user accounts"
+      "description": "Registered passenger user accounts and wallet balances"
+    },
+    "/users/{userId}": {
+      "schema": "passenger",
+      "description": "Connected mobile app user profiles and auth records"
     },
     "/bookings/{bookingId}": {
       "schema": "booking",

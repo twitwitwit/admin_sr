@@ -1,23 +1,20 @@
 import React, { useState } from 'react';
 import {
-  ShieldAlert,
-  AlertTriangle,
-  Radio,
   Phone,
-  Truck,
   CheckCircle2,
   Clock,
   MapPin,
   Car,
-  User,
-  Plus,
-  Filter,
-  Check,
   Search,
   ExternalLink,
+  Loader2,
+  Compass,
 } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 import { EmergencyAlert, EmergencyStatus, EmergencyType } from '../../types';
+import { formatHumanReadableTripId } from '../../utils/tripHelpers';
+import { formatHumanReadableSosId } from '../../utils/idHelpers';
+import { queryGoogleMapsGrounding, MapsGroundingResult } from '../../utils/mapsGroundingService';
 
 interface EmergencySOSViewProps {
   onOpenCall: (name: string, phone: string, role: string) => void;
@@ -32,6 +29,22 @@ export const EmergencySOSView: React.FC<EmergencySOSViewProps> = ({
   const [filterTab, setFilterTab] = useState<'all' | 'critical' | 'responding' | 'resolved'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [groundedAlertMap, setGroundedAlertMap] = useState<Record<string, MapsGroundingResult>>({});
+  const [loadingAlertId, setLoadingAlertId] = useState<string | null>(null);
+
+  const handleGroundIncidentLocation = async (alert: EmergencyAlert) => {
+    setLoadingAlertId(alert.id);
+    try {
+      const [lat, lng] = alert.location.coordinates || [14.6565, 121.035];
+      const prompt = `Find the nearest hospitals, emergency rooms, police stations, and 24/7 roadside assistance near ${alert.location.name} (${alert.location.address}).`;
+      const result = await queryGoogleMapsGrounding(prompt, lat, lng);
+      setGroundedAlertMap((prev) => ({ ...prev, [alert.id]: result }));
+    } catch {
+      // handled gracefully by service
+    } finally {
+      setLoadingAlertId(null);
+    }
+  };
 
   const totalSOS = emergencyAlerts.length;
   const criticalCount = emergencyAlerts.filter((a) => a.status === 'critical').length;
@@ -54,61 +67,41 @@ export const EmergencySOSView: React.FC<EmergencySOSViewProps> = ({
 
   return (
     <div id="emergency-view-root" className="space-y-6 pb-12">
-      {/* 4 Stat Cards */}
+      {/* 4 Stat Cards without unnecessary decorative icons */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Stat 1: Total SOS Logged */}
-        <div className="p-5 bg-[#0c121e] border border-slate-800 rounded-2xl shadow-xl flex items-center justify-between">
-          <div>
-            <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Total SOS Logged</span>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-3xl font-black text-white font-mono">{totalSOS}</span>
-              <span className="text-xs font-bold text-slate-400">All-time</span>
-            </div>
-          </div>
-          <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <ShieldAlert className="w-6 h-6" />
+        <div className="p-5 bg-[#0c121e] border border-slate-800 rounded-2xl shadow-xl flex flex-col justify-between">
+          <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Total SOS Logged</span>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-3xl font-black text-white font-mono">{totalSOS}</span>
+            <span className="text-xs font-bold text-slate-400">All-time</span>
           </div>
         </div>
 
         {/* Stat 2: Active Critical */}
-        <div className="p-5 bg-[#0c121e] border border-red-900/50 rounded-2xl shadow-xl flex items-center justify-between">
-          <div>
-            <span className="text-xs uppercase font-bold text-red-400 tracking-wider">Active Critical</span>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-3xl font-black text-red-500 font-mono">{criticalCount}</span>
-              <span className="text-xs font-bold text-red-300">Needs Immediate Action</span>
-            </div>
-          </div>
-          <div className="p-3 rounded-2xl bg-red-600/20 text-red-400 border border-red-500/40 animate-pulse">
-            <AlertTriangle className="w-6 h-6" />
+        <div className="p-5 bg-[#0c121e] border border-red-900/50 rounded-2xl shadow-xl flex flex-col justify-between">
+          <span className="text-xs uppercase font-bold text-red-400 tracking-wider">Active Critical</span>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-3xl font-black text-red-500 font-mono">{criticalCount}</span>
+            <span className="text-xs font-bold text-red-300">Needs Immediate Action</span>
           </div>
         </div>
 
         {/* Stat 3: Units Responding */}
-        <div className="p-5 bg-[#0c121e] border border-amber-900/40 rounded-2xl shadow-xl flex items-center justify-between">
-          <div>
-            <span className="text-xs uppercase font-bold text-amber-400 tracking-wider">Units Responding</span>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-3xl font-black text-amber-400 font-mono">{respondingCount}</span>
-              <span className="text-xs font-bold text-amber-300">En Route to Incidents</span>
-            </div>
-          </div>
-          <div className="p-3 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <Truck className="w-6 h-6" />
+        <div className="p-5 bg-[#0c121e] border border-amber-900/40 rounded-2xl shadow-xl flex flex-col justify-between">
+          <span className="text-xs uppercase font-bold text-amber-400 tracking-wider">Units Responding</span>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-3xl font-black text-amber-400 font-mono">{respondingCount}</span>
+            <span className="text-xs font-bold text-amber-300">En Route to Incidents</span>
           </div>
         </div>
 
         {/* Stat 4: Incidents Resolved */}
-        <div className="p-5 bg-[#0c121e] border border-emerald-900/40 rounded-2xl shadow-xl flex items-center justify-between">
-          <div>
-            <span className="text-xs uppercase font-bold text-emerald-400 tracking-wider">Incidents Resolved</span>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-3xl font-black text-emerald-400 font-mono">{resolvedCount}</span>
-              <span className="text-xs font-bold text-emerald-300">Cleared Today</span>
-            </div>
-          </div>
-          <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="w-6 h-6" />
+        <div className="p-5 bg-[#0c121e] border border-emerald-900/40 rounded-2xl shadow-xl flex flex-col justify-between">
+          <span className="text-xs uppercase font-bold text-emerald-400 tracking-wider">Incidents Resolved</span>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-3xl font-black text-emerald-400 font-mono">{resolvedCount}</span>
+            <span className="text-xs font-bold text-emerald-300">Cleared Today</span>
           </div>
         </div>
       </div>
@@ -171,9 +164,9 @@ export const EmergencySOSView: React.FC<EmergencySOSViewProps> = ({
             </p>
           </div>
         ) : (
-          filteredAlerts.map((alert) => (
+          filteredAlerts.map((alert, index) => (
             <div
-              key={alert.id}
+              key={`sos-alert-${alert.id || 'sos'}-${index}`}
               className={`p-6 bg-[#0c121e] rounded-3xl border transition-all shadow-xl ${
                 alert.status === 'critical'
                   ? 'border-red-600/80 shadow-red-950/40 ring-1 ring-red-500/20'
@@ -197,8 +190,10 @@ export const EmergencySOSView: React.FC<EmergencySOSViewProps> = ({
                     {alert.type}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className="text-base font-black text-white font-mono">{alert.id}</span>
-                    <span className="text-xs text-slate-400 font-mono">Trip: {alert.tripId}</span>
+                    <span className="text-base font-black text-white font-mono">{formatHumanReadableSosId(alert.id)}</span>
+                    <span className="text-xs text-slate-400 font-mono">
+                      Trip: <strong className="text-amber-400">{formatHumanReadableTripId(alert.tripId)}</strong>
+                    </span>
                   </div>
                 </div>
 
@@ -229,19 +224,9 @@ export const EmergencySOSView: React.FC<EmergencySOSViewProps> = ({
                   <span className="text-[10px] uppercase font-bold text-slate-400 block mb-2">
                     Distressed Caller ({alert.userRole})
                   </span>
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={
-                        alert.userAvatar ||
-                        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
-                      }
-                      alt={alert.userName}
-                      className="w-12 h-12 rounded-full object-cover ring-2 ring-red-500/40"
-                    />
-                    <div>
-                      <h5 className="text-sm font-black text-white">{alert.userName}</h5>
-                      <span className="text-xs font-mono font-bold text-amber-400">{alert.userPhone}</span>
-                    </div>
+                  <div>
+                    <h5 className="text-sm font-black text-white">{alert.userName}</h5>
+                    <span className="text-xs font-mono font-bold text-amber-400">{alert.userPhone}</span>
                   </div>
                   <button
                     onClick={() => onOpenCall(alert.userName, alert.userPhone, alert.userRole)}
@@ -306,9 +291,8 @@ export const EmergencySOSView: React.FC<EmergencySOSViewProps> = ({
                   </div>
 
                   {alert.assignedUnit && (
-                    <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
-                      <Truck className="w-3.5 h-3.5" />
-                      <span className="truncate">{alert.assignedUnit}</span>
+                    <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] font-bold text-amber-400">
+                      <span className="truncate">Unit: {alert.assignedUnit}</span>
                     </div>
                   )}
                 </div>
@@ -327,24 +311,83 @@ export const EmergencySOSView: React.FC<EmergencySOSViewProps> = ({
                 )}
               </div>
 
+              {/* Google Maps Grounding Emergency Facilities Output */}
+              {groundedAlertMap[alert.id] && (
+                <div className="mt-4 p-4 bg-[#080c14] border border-amber-500/30 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                      <Compass className="w-3.5 h-3.5" />
+                      Nearby Emergency Facilities (Google Maps Grounding • {groundedAlertMap[alert.id].model})
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400">
+                      {groundedAlertMap[alert.id].places.length} Map Links
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                    {groundedAlertMap[alert.id].text}
+                  </p>
+                  {groundedAlertMap[alert.id].places.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      {groundedAlertMap[alert.id].places.map((place, pIdx) => (
+                        <div
+                          key={`sos-place-${alert.id}-${pIdx}`}
+                          className="p-2.5 bg-slate-900/80 border border-slate-800 rounded-xl space-y-1"
+                        >
+                          <a
+                            href={place.uri}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between gap-2 text-xs font-bold text-amber-400 hover:text-amber-300 underline"
+                          >
+                            <span className="truncate">{place.title}</span>
+                            <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                          </a>
+                          {place.reviewSnippets && place.reviewSnippets.length > 0 && (
+                            <p className="text-[10px] text-slate-400 italic line-clamp-2">
+                              "{place.reviewSnippets[0]}"
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Bottom Action Buttons */}
               <div className="pt-4 mt-4 border-t border-slate-800 flex flex-wrap items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleGroundIncidentLocation(alert)}
+                  disabled={loadingAlertId === alert.id}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {loadingAlertId === alert.id ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Locating on Google Maps...</span>
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>Locate Nearest Hospitals & Police (Google Maps)</span>
+                    </>
+                  )}
+                </button>
                 {alert.status !== 'resolved' && (
                   <>
                     <button
                       onClick={() => onOpenDispatch(alert)}
-                      className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2"
+                      className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
                     >
-                      <Truck className="w-4 h-4" />
-                      <span>{alert.assignedUnit ? 'Re-assign Dispatch Unit' : 'Dispatch Emergency Unit'}</span>
+                      {alert.assignedUnit ? 'Re-assign Dispatch Unit' : 'Dispatch Emergency Unit'}
                     </button>
 
                     <button
                       onClick={() => resolveEmergencyAlert(alert.id)}
-                      className="px-5 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 text-xs font-black rounded-xl transition-all flex items-center gap-2"
+                      className="px-5 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 text-xs font-black rounded-xl transition-all cursor-pointer"
                     >
-                      <Check className="w-4 h-4 stroke-[3]" />
-                      <span>Mark Incident as Resolved</span>
+                      Mark Incident as Resolved
                     </button>
                   </>
                 )}

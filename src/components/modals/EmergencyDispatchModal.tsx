@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Siren, X, Check, ShieldAlert, Truck, HeartPulse, Shield, MapPin } from 'lucide-react';
+import { useRealtimeDb } from '../../context/RealtimeDbContext';
+import { checkRolePermission, getRoleRestrictedMessage } from '../../utils/permissionHelpers';
 
 interface EmergencyDispatchModalProps {
   isOpen: boolean;
@@ -49,6 +51,7 @@ export const EmergencyDispatchModal: React.FC<EmergencyDispatchModalProps> = ({
   incidentLog,
   onConfirmDispatch,
 }) => {
+  const { currentAdminUser } = useRealtimeDb();
   const [selectedUnit, setSelectedUnit] = useState(EMERGENCY_UNITS[0].name);
   const [notes, setNotes] = useState('');
 
@@ -56,6 +59,10 @@ export const EmergencyDispatchModal: React.FC<EmergencyDispatchModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!checkRolePermission(currentAdminUser.role, 'emergency_dispatch')) {
+      alert(getRoleRestrictedMessage(currentAdminUser.role, 'Emergency Unit Dispatch'));
+      return;
+    }
     onConfirmDispatch(selectedUnit);
     onClose();
   };

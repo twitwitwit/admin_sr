@@ -1,26 +1,16 @@
 import React, { useState } from 'react';
-import {
-  CalendarDays,
-  Search,
-  Download,
-  Plus,
-  Eye,
-  FileText,
-  Clock,
-  MapPin,
-  Car,
-  User,
-  CreditCard,
-} from 'lucide-react';
+import { Search, Car, Bike } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
-import { Booking, BookingStatus } from '../../types';
+import { Booking } from '../../types';
+import { calculateTripFareBreakdown, formatHumanReadableTripId } from '../../utils/tripHelpers';
+import { fetchOsrmRoute } from '../../utils/osrmRouting';
 
 interface BookingsViewProps {
   onInspectBooking: (booking: Booking) => void;
 }
 
 export const BookingsView: React.FC<BookingsViewProps> = ({ onInspectBooking }) => {
-  const { bookings, createBooking, exportCsvData } = useRealtimeDb();
+  const { bookings, createBooking, exportCsvData, systemSettings } = useRealtimeDb();
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -34,11 +24,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({ onInspectBooking }) 
     'Cancelled',
   ];
 
-  const formatBookingId = (id: string) => {
-    if (id.startsWith('#TRIP-')) return id;
-    if (id.length > 10) return `#BK-${id.slice(-6).toUpperCase()}`;
-    return `#${id.toUpperCase()}`;
-  };
+  const formatBookingId = (id: string) => formatHumanReadableTripId(id);
 
   const filteredBookings = bookings.filter((b) => {
     if (selectedStatus !== 'All' && b.status.toUpperCase() !== selectedStatus.toUpperCase()) {
@@ -73,7 +59,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({ onInspectBooking }) 
               <button
                 key={st}
                 onClick={() => setSelectedStatus(st)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                   selectedStatus === st
                     ? 'bg-amber-500 text-black font-extrabold shadow-md shadow-amber-500/20'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -95,28 +81,31 @@ export const BookingsView: React.FC<BookingsViewProps> = ({ onInspectBooking }) 
         </div>
 
         {/* Right Tools */}
-        <div className="flex items-center gap-3">
-          <div className="relative">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3">
+          <div className="relative flex-1 sm:flex-initial min-w-[180px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by booking, route, rider..."
-              className="bg-[#080c14] border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-medium w-60"
+              className="bg-[#080c14] border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-medium w-full sm:w-60"
             />
           </div>
 
           <button
             onClick={() => exportCsvData('bookings')}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 border border-slate-700 transition-colors"
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer whitespace-nowrap"
           >
-            <Download className="w-3.5 h-3.5 text-amber-400" />
-            <span>Export</span>
+            Export
           </button>
 
           <button
-            onClick={() =>
+            onClick={async () => {
+              const pickupCoords: [number, number] = [14.6533, 121.0332]; // Trinoma Mall
+              const dropoffCoords: [number, number] = [14.6398, 121.0784]; // Ateneo de Manila, Katipunan
+              const osrm = await fetchOsrmRoute(pickupCoords, dropoffCoords);
+
               createBooking({
                 passenger: {
                   id: 'PAS-102',
@@ -127,22 +116,26 @@ export const BookingsView: React.FC<BookingsViewProps> = ({ onInspectBooking }) 
                   id: 'DRV-201',
                   name: 'Juan Dela Cruz',
                   plateNumber: 'NDA 1234',
-                  vehicle: 'Toyota Vios',
+                  vehicle: 'Toyota Vios (4-Wheel)',
                 },
                 route: {
                   pickup: 'Trinoma Mall, North EDSA',
                   dropoff: 'Ateneo de Manila, Katipunan',
-                  distanceKm: 8.5,
+                  pickupCoords,
+                  dropoffCoords,
+                  distanceKm: osrm.distanceKm,
+                  normalDurationMins: osrm.durationMins,
+                  estimatedDurationMins: osrm.durationMins + 20, // +20 mins traffic crawl
                 },
-                fare: 165.0,
+                vehicleCategory: '4-WHEEL_TNVS',
+                pricingMode: systemSettings.tnvsPricingMode || 'UPFRONT',
                 paymentMethod: 'GCash',
                 status: 'IN PROGRESS',
-              })
-            }
-            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-1.5 whitespace-nowrap"
+              });
+            }}
+            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all whitespace-nowrap cursor-pointer"
           >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>+ New Dispatch</span>
+            + New Dispatch
           </button>
         </div>
       </div>
@@ -155,9 +148,9 @@ export const BookingsView: React.FC<BookingsViewProps> = ({ onInspectBooking }) 
               <tr>
                 <th className="py-3.5 px-6">Booking ID & Time</th>
                 <th className="py-3.5 px-6">Passenger</th>
-                <th className="py-3.5 px-6">Driver Assigned</th>
-                <th className="py-3.5 px-6">Route Details</th>
-                <th className="py-3.5 px-6">Fare & Payment</th>
+                <th className="py-3.5 px-6">Driver & Tariff Class</th>
+                <th className="py-3.5 px-6">Route & Traffic Duration</th>
+                <th className="py-3.5 px-6">Fare & Matrix</th>
                 <th className="py-3.5 px-6">Status</th>
                 <th className="py-3.5 px-6 text-right">Actions</th>
               </tr>
@@ -170,118 +163,172 @@ export const BookingsView: React.FC<BookingsViewProps> = ({ onInspectBooking }) 
                   </td>
                 </tr>
               ) : (
-                filteredBookings.map((booking) => (
-                  <tr key={booking.id} className="hover:bg-slate-900/50 transition-colors group">
-                    {/* Booking ID & Time */}
-                    <td className="py-4 px-6">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-mono font-black text-amber-400 text-sm">
-                          {formatBookingId(booking.id)}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {booking.time}
-                        </span>
-                      </div>
-                    </td>
+                filteredBookings.map((booking, index) => {
+                  const breakdown = calculateTripFareBreakdown(booking, systemSettings);
+                  const isMC = breakdown.vehicleCategory === '2-WHEEL_MC';
 
-                    {/* Passenger */}
-                    <td className="py-4 px-6">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-white text-sm">
-                          {booking.passenger.name}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {booking.passenger.phone}
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* Driver */}
-                    <td className="py-4 px-6">
-                      {booking.driverAssigned ? (
+                  return (
+                    <tr
+                      key={`booking-${booking.id || 'b'}-${index}`}
+                      onClick={() => onInspectBooking(booking)}
+                      title="Click to inspect trip invoice & route audit"
+                      className="hover:bg-slate-900/50 transition-colors group cursor-pointer"
+                    >
+                      {/* Booking ID & Time */}
+                      <td className="py-3.5 px-6">
                         <div className="flex flex-col gap-0.5">
-                          <span className="font-bold text-white">
-                            {booking.driverAssigned.name}
+                          <span className="font-mono tabular-nums font-bold text-amber-400 text-xs">
+                            {formatBookingId(booking.id)}
                           </span>
-                          <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded w-fit">
-                            {booking.driverAssigned.plateNumber} • {booking.driverAssigned.vehicle}
+                          <span className="text-[11px] text-slate-400 font-mono tabular-nums">
+                            {booking.time}
                           </span>
                         </div>
-                      ) : (
-                        <span className="text-slate-500 italic">Unassigned (Searching...)</span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* Route Details */}
-                    <td className="py-4 px-6">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-slate-300">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                          <span className="font-medium truncate max-w-[180px]">
-                            {booking.route.pickup}
+                      {/* Passenger */}
+                      <td className="py-3.5 px-6">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-semibold text-white text-xs">
+                            {booking.passenger.name}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-mono tabular-nums">
+                            {booking.passenger.phone}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-slate-300">
-                          <span className="w-2 h-2 rounded-full bg-red-400"></span>
-                          <span className="font-medium truncate max-w-[180px]">
-                            {booking.route.dropoff}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Fare & Payment */}
-                    <td className="py-4 px-6">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-mono font-black text-white text-sm">
-                          ₱{booking.fare.toFixed(2)}
+                      {/* Driver & Tariff Class */}
+                      <td className="py-3.5 px-6">
+                        <div className="flex flex-col gap-1">
+                          {booking.driverAssigned ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-semibold text-white text-xs">
+                                {booking.driverAssigned.name}
+                              </span>
+                              <span className="text-[11px] text-slate-400">
+                                <span className="font-mono text-amber-400 font-semibold">
+                                  {booking.driverAssigned.plateNumber}
+                                </span>
+                                <span className="mx-1.5 text-slate-600" aria-hidden="true">·</span>
+                                <span>{booking.driverAssigned.vehicle}</span>
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 italic">Unassigned (Searching...)</span>
+                          )}
+                          <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold ${
+                              isMC ? 'text-cyan-400' : 'text-amber-400/90'
+                            }`}
+                          >
+                            {isMC ? <Bike className="w-3 h-3" /> : <Car className="w-3 h-3" />}
+                            {isMC ? '2-Wheel MC (Distance Matrix)' : '4-Wheel TNVS (LTFRB Matrix)'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Route & Traffic Duration */}
+                      <td className="py-3.5 px-6">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-slate-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            <span className="font-medium truncate max-w-[180px]">
+                              {booking.route.pickup}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                            <span className="font-medium truncate max-w-[180px]">
+                              {booking.route.dropoff}
+                            </span>
+                          </div>
+                          <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5 pt-0.5">
+                            <span>{breakdown.distanceKm.toFixed(1)} km</span>
+                            <span>•</span>
+                            <span>{breakdown.estimatedDurationMins} mins</span>
+                            {!isMC && breakdown.extraTrafficCrawlMins > 0 && (
+                              <span className="text-amber-400 font-semibold">
+                                (+₱{breakdown.trafficCrawlSurcharge.toFixed(0)} traffic)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Fare & Payment */}
+                      <td className="py-3.5 px-6">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono tabular-nums font-bold text-white text-xs">
+                              ₱{breakdown.finalBilledFare.toFixed(2)}
+                            </span>
+                            {breakdown.surgeMultiplier > 1.0 && (
+                              <span className="text-[10px] font-mono font-bold text-amber-400">
+                                {breakdown.surgeMultiplier.toFixed(1)}x
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] font-medium text-emerald-400">
+                            {booking.paymentMethod} • {breakdown.pricingMode === 'UPFRONT' ? 'Upfront' : 'Metered'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3.5 px-6">
+                        <span
+                          className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
+                            booking.status === 'COMPLETED'
+                              ? 'text-emerald-400'
+                              : booking.status === 'CANCELLED'
+                              ? 'text-rose-400'
+                              : booking.status === 'IN PROGRESS'
+                              ? 'text-amber-400'
+                              : 'text-cyan-400'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              booking.status === 'COMPLETED'
+                                ? 'bg-emerald-400'
+                                : booking.status === 'CANCELLED'
+                                ? 'bg-rose-400'
+                                : booking.status === 'IN PROGRESS'
+                                ? 'bg-amber-400 animate-pulse'
+                                : 'bg-cyan-400'
+                            }`}
+                          />
+                          {booking.status}
                         </span>
-                        <span className="text-[10px] font-bold text-emerald-400">
-                          {booking.paymentMethod}
-                        </span>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Status */}
-                    <td className="py-4 px-6">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                          booking.status === 'COMPLETED'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : booking.status === 'CANCELLED'
-                            ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                            : booking.status === 'IN PROGRESS'
-                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse'
-                            : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                        }`}
-                      >
-                        {booking.status}
-                      </span>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-4 px-6 text-right">
-                      <button
-                        onClick={() => onInspectBooking(booking)}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold transition-colors flex items-center gap-1.5 ml-auto"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Invoice</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      {/* Actions */}
+                      <td className="py-3.5 px-6 text-right">
+                        <button
+                          onClick={() => onInspectBooking(booking)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold transition-colors ml-auto text-xs cursor-pointer border border-slate-700/80"
+                        >
+                          Open Invoice
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-[#080c14] border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+        <div className="p-4 bg-[#080c14] border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-400">
           <span>Showing {filteredBookings.length} bookings</span>
-          <span className="font-mono text-[11px] text-amber-400">Real-time GPS Fare Metering</span>
+          <span className="font-mono text-[11px] text-amber-400">
+            LTFRB 4-Wheel TNVS (₱{systemSettings.perMinRate}/min + Surge) & MC Taxi TWG Distance Matrix
+          </span>
         </div>
       </div>
     </div>
   );
 };
+

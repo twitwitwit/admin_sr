@@ -3,9 +3,10 @@ import React from 'react';
 interface SwiftRideLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'hero';
   showSubtitle?: boolean;
+  iconOnly?: boolean;
 }
 
-export const SwiftRideLogo: React.FC<SwiftRideLogoProps> = ({ size = 'md', showSubtitle = false }) => {
+export const SwiftRideLogo: React.FC<SwiftRideLogoProps> = ({ size = 'md', showSubtitle = false, iconOnly = false }) => {
   return (
     <div className="flex flex-col items-center select-none">
       <div className="flex items-center gap-2.5">
@@ -30,19 +31,21 @@ export const SwiftRideLogo: React.FC<SwiftRideLogoProps> = ({ size = 'md', showS
         </div>
 
         {/* SwiftRide Text */}
-        <div className="flex flex-col">
-          <div className="flex items-center tracking-wider">
-            <span className={`italic font-black text-white ${size === 'hero' ? 'text-3xl' : size === 'lg' ? 'text-xl' : size === 'sm' ? 'text-sm' : 'text-base'}`}>
-              SWIFT
-            </span>
-            <span className={`italic font-black text-amber-500 ml-0.5 ${size === 'hero' ? 'text-3xl' : size === 'lg' ? 'text-xl' : size === 'sm' ? 'text-sm' : 'text-base'}`}>
-              RIDE
-            </span>
+        {!iconOnly && (
+          <div className="flex flex-col">
+            <div className="flex items-center tracking-wider">
+              <span className={`italic font-black text-white ${size === 'hero' ? 'text-3xl' : size === 'lg' ? 'text-xl' : size === 'sm' ? 'text-sm' : 'text-base'}`}>
+                SWIFT
+              </span>
+              <span className={`italic font-black text-amber-500 ml-0.5 ${size === 'hero' ? 'text-3xl' : size === 'lg' ? 'text-xl' : size === 'sm' ? 'text-sm' : 'text-base'}`}>
+                RIDE
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {showSubtitle && (
+      {!iconOnly && showSubtitle && (
         <div className="mt-1 text-[10px] uppercase font-bold tracking-[0.25em] text-amber-500/90 flex items-center gap-1.5">
           <span>SAFE</span>
           <span className="text-white/40">•</span>

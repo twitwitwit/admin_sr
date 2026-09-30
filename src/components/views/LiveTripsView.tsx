@@ -1,18 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Compass,
-  Radio,
-  Car,
-  Navigation,
-  RefreshCw,
-  Eye,
-  Phone,
-  Layers,
-  MapPin,
-  Maximize2,
-} from 'lucide-react';
+import { MapPin, ExternalLink, Compass, Search, Loader2, Navigation } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 import { Driver, VehicleType } from '../../types';
+import { fetchOsrmRoute, OsrmRouteResult } from '../../utils/osrmRouting';
+import {
+  queryGoogleMapsGrounding,
+  getBrowserOrFallbackCoords,
+  MapsGroundingResult,
+} from '../../utils/mapsGroundingService';
 import L from 'leaflet';
 
 interface LiveTripsViewProps {
@@ -21,12 +16,29 @@ interface LiveTripsViewProps {
 }
 
 export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, onOpenCall }) => {
-  const { drivers, triggerManualTelemetryPing } = useRealtimeDb();
+  const { drivers, bookings, triggerManualTelemetryPing, isLivePolling } = useRealtimeDb();
   const [selectedVehicleType, setSelectedVehicleType] = useState<string>('All');
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
+  const [activeOsrmRoute, setActiveOsrmRoute] = useState<{
+    route: OsrmRouteResult;
+    pickupName: string;
+    dropoffName: string;
+  } | null>(null);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+
+  // Google Maps Grounding State
+  const [mapsQuery, setMapsQuery] = useState<string>(
+    'Major transport terminals, drop-off bays, and landmarks near SM North EDSA and Quezon Avenue'
+  );
+  const [mapsResult, setMapsResult] = useState<MapsGroundingResult | null>(null);
+  const [isLoadingMaps, setIsLoadingMaps] = useState<boolean>(false);
+  const [mapsError, setMapsError] = useState<string | null>(null);
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
+  const markerMetaRef = useRef<Record<string, string>>({});
+  const routeLayerGroupRef = useRef<L.LayerGroup | null>(null);
 
   const activeFleet = drivers.filter(
     (d) => !d.isPendingAudit && (d.status === 'ONLINE' || d.status === 'ON TRIP')
@@ -42,29 +54,153 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
     if (!mapContainerRef.current) return;
     if (mapInstanceRef.current) return;
 
+    // Reset any stale marker references from previous mounts
+    markersRef.current = {};
+    markerMetaRef.current = {};
+
     // Manila coordinates
     const map = L.map(mapContainerRef.current, {
       center: [14.6565, 121.035],
       zoom: 13,
       zoomControl: false,
+      zoomAnimation: false,
+      fadeAnimation: false,
+      markerZoomAnimation: false,
     });
 
-    // Dark sleek tile layer (CartoDB Dark Matter)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      subdomains: 'abcd',
+    // Standard Free Leaflet OpenStreetMap tile layer (light mode)
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
+    routeLayerGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
 
+    const safeInvalidateSize = () => {
+      if (!mapInstanceRef.current) return;
+      try {
+        mapInstanceRef.current.invalidateSize({ animate: false });
+      } catch {
+        // ignore if container is unmounting
+      }
+    };
+
+    window.addEventListener('resize', safeInvalidateSize);
+    const resizeTimer = setTimeout(safeInvalidateSize, 150);
+
     return () => {
-      map.remove();
+      clearTimeout(resizeTimer);
+      window.removeEventListener('resize', safeInvalidateSize);
+      try {
+        map.stop();
+        map.remove();
+      } catch {
+        // ignore cleanup errors
+      }
+      markersRef.current = {};
+      markerMetaRef.current = {};
+      routeLayerGroupRef.current = null;
       mapInstanceRef.current = null;
     };
   }, []);
+
+  // Fetch & render real OSRM street-level route when a driver is selected
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const routeLayer = routeLayerGroupRef.current;
+    if (!map || !routeLayer) return;
+
+    try {
+      routeLayer.clearLayers();
+    } catch {
+      return;
+    }
+
+    const targetDriver =
+      selectedDriver || activeFleet.find((d) => d.status === 'ON TRIP') || activeFleet[0] || null;
+
+    if (!targetDriver || !targetDriver.currentLocation) {
+      setActiveOsrmRoute(null);
+      return;
+    }
+
+    // Match driver's active or recent booking for dropoff coordinates, or use a Metro Manila hub
+    const matchedBooking = bookings.find(
+      (b) =>
+        b.driverAssigned?.id === targetDriver.id ||
+        b.driverAssigned?.plateNumber === targetDriver.plateNumber
+    );
+
+    const pickupCoords: [number, number] = targetDriver.currentLocation;
+    const dropoffCoords: [number, number] = matchedBooking?.route?.dropoffCoords || [
+      14.6565,
+      121.0289,
+    ]; // SM North EDSA hub
+    const pickupName = matchedBooking?.route?.pickup || `${targetDriver.name} (Live GPS)`;
+    const dropoffName = matchedBooking?.route?.dropoff || 'SM North EDSA Terminal';
+
+    let isCancelled = false;
+    setIsLoadingRoute(true);
+
+    fetchOsrmRoute(pickupCoords, dropoffCoords).then((osrmResult) => {
+      if (isCancelled || !mapInstanceRef.current || !routeLayerGroupRef.current) return;
+      setIsLoadingRoute(false);
+      setActiveOsrmRoute({
+        route: osrmResult,
+        pickupName,
+        dropoffName,
+      });
+
+      try {
+        routeLayerGroupRef.current.clearLayers();
+
+        // Outer glow line
+        L.polyline(osrmResult.geometry, {
+          color: '#0c121e',
+          weight: 8,
+          opacity: 0.75,
+        }).addTo(routeLayerGroupRef.current);
+
+        // Primary OSRM street route polyline
+        const routeLine = L.polyline(osrmResult.geometry, {
+          color: targetDriver.vehicleType === 'Motorcycle' ? '#06B6D4' : '#F59E0B',
+          weight: 4.5,
+          opacity: 0.95,
+        }).addTo(routeLayerGroupRef.current);
+
+        // Destination marker pin
+        const destIcon = L.divIcon({
+          className: 'osrm-dest-pin',
+          html: `<div style="width: 22px; height: 22px; border-radius: 50%; background: #F43F5E; border: 3px solid #0c121e; box-shadow: 0 0 10px rgba(244,63,94,0.7);"></div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        });
+
+        L.marker(dropoffCoords, { icon: destIcon })
+          .bindPopup(
+            `<div style="font-size:12px;color:#0c121e;"><strong>Dropoff:</strong> ${dropoffName}<br/><strong>OSRM Distance:</strong> ${osrmResult.distanceKm} km (~${osrmResult.durationMins} mins)</div>`
+          )
+          .addTo(routeLayerGroupRef.current);
+
+        if (selectedDriver && mapInstanceRef.current) {
+          mapInstanceRef.current.fitBounds(routeLine.getBounds(), {
+            padding: [48, 48],
+            maxZoom: 15,
+            animate: false,
+          });
+        }
+      } catch {
+        // ignore if map unmounted during async route draw
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedDriver, bookings]);
 
   // Update Markers dynamically as coordinates update from real-time store
   useEffect(() => {
@@ -72,7 +208,7 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
     if (!map) return;
 
     // Create custom vehicle icons
-    const createVehicleIcon = (vehicleType: VehicleType, status: string, heading: number = 0) => {
+    const createVehicleIcon = (vehicleType: VehicleType, status: string) => {
       const isTrip = status === 'ON TRIP';
       const color = isTrip ? '#F59E0B' : '#10B981';
       const iconSvg =
@@ -100,29 +236,45 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
       if (!drv.currentLocation) return;
 
       const [lat, lng] = drv.currentLocation;
-      const icon = createVehicleIcon(drv.vehicleType, drv.status, drv.heading || 0);
+      const metaKey = `${drv.vehicleType}:${drv.status}`;
+      const existingMarker = markersRef.current[drv.id];
 
-      if (markersRef.current[drv.id]) {
-        // Move marker
-        markersRef.current[drv.id].setLatLng([lat, lng]);
-        markersRef.current[drv.id].setIcon(icon);
-      } else {
-        // Create marker
-        const marker = L.marker([lat, lng], { icon }).addTo(map);
+      try {
+        if (existingMarker && map.hasLayer(existingMarker)) {
+          existingMarker.setLatLng([lat, lng]);
+          if (markerMetaRef.current[drv.id] !== metaKey) {
+            existingMarker.setIcon(createVehicleIcon(drv.vehicleType, drv.status));
+            markerMetaRef.current[drv.id] = metaKey;
+          }
+        } else {
+          if (existingMarker) {
+            try {
+              existingMarker.remove();
+            } catch {}
+          }
+          const icon = createVehicleIcon(drv.vehicleType, drv.status);
+          const marker = L.marker([lat, lng], { icon }).addTo(map);
 
-        marker.on('click', () => {
-          setSelectedDriver(drv);
-        });
+          marker.on('click', () => {
+            setSelectedDriver(drv);
+          });
 
-        markersRef.current[drv.id] = marker;
+          markersRef.current[drv.id] = marker;
+          markerMetaRef.current[drv.id] = metaKey;
+        }
+      } catch {
+        // ignore transient Leaflet DOM errors
       }
     });
 
     // Remove markers that are no longer in fleet
     Object.keys(markersRef.current).forEach((id) => {
       if (!filteredFleet.find((d) => d.id === id)) {
-        markersRef.current[id].remove();
+        try {
+          markersRef.current[id].remove();
+        } catch {}
         delete markersRef.current[id];
+        delete markerMetaRef.current[id];
       }
     });
   }, [filteredFleet]);
@@ -130,7 +282,44 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
   const handleFocusDriver = (driver: Driver) => {
     setSelectedDriver(driver);
     if (mapInstanceRef.current && driver.currentLocation) {
-      mapInstanceRef.current.flyTo(driver.currentLocation, 15, { duration: 1.2 });
+      try {
+        mapInstanceRef.current.setView(driver.currentLocation, 15, { animate: false });
+      } catch {}
+    }
+  };
+
+  const handleRunMapsGrounding = async (
+    customPrompt?: string,
+    useBrowserGeo?: boolean,
+    overrideCoords?: [number, number]
+  ) => {
+    const promptToRun = (customPrompt ?? mapsQuery).trim();
+    if (!promptToRun) return;
+
+    setIsLoadingMaps(true);
+    setMapsError(null);
+
+    try {
+      const targetDriver =
+        selectedDriver || activeFleet.find((d) => d.status === 'ON TRIP') || activeFleet[0] || null;
+      const defaultLat = overrideCoords?.[0] ?? targetDriver?.currentLocation?.[0] ?? 14.6565;
+      const defaultLng = overrideCoords?.[1] ?? targetDriver?.currentLocation?.[1] ?? 121.035;
+
+      const coords = useBrowserGeo
+        ? await getBrowserOrFallbackCoords(defaultLat, defaultLng)
+        : { latitude: defaultLat, longitude: defaultLng };
+
+      const result = await queryGoogleMapsGrounding(
+        promptToRun,
+        coords.latitude,
+        coords.longitude
+      );
+      setMapsResult(result);
+      if (customPrompt) setMapsQuery(customPrompt);
+    } catch (err: any) {
+      setMapsError(err?.message || 'Unable to fetch Google Maps grounding data.');
+    } finally {
+      setIsLoadingMaps(false);
     }
   };
 
@@ -160,17 +349,31 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
 
         {/* Telemetry Status and Radar Pulse Trigger */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            <span>{filteredFleet.length} Active Radar Pings</span>
+          <div
+            className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-xl border ${
+              isLivePolling
+                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                : 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isLivePolling ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'
+              }`}
+            ></span>
+            <span>
+              {isLivePolling
+                ? `${filteredFleet.length} Active Live Units`
+                : 'Updates Paused (Inspection Mode)'}
+            </span>
           </div>
 
           <button
             onClick={() => triggerManualTelemetryPing()}
-            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-bold rounded-xl flex items-center gap-1.5 border border-slate-700 transition-colors"
+            title="Refresh active driver positions across fleet"
+            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Ping Fleet</span>
+            Refresh Fleet
           </button>
         </div>
       </div>
@@ -182,33 +385,45 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
           <div ref={mapContainerRef} className="w-full h-full z-0" />
 
           {/* Map Overlay HUD Card */}
-          <div className="absolute top-4 left-4 z-10 bg-[#0c121e]/90 backdrop-blur-md border border-slate-800 p-3.5 rounded-2xl shadow-xl flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-              <Navigation className="w-4 h-4 animate-spin" />
-            </div>
+          <div className="absolute top-4 left-4 z-10 bg-[#0c121e]/95 backdrop-blur-md border border-slate-800 p-3.5 rounded-2xl shadow-xl max-w-xs space-y-1.5">
             <div>
-              <span className="text-xs font-black text-white block">Metro Manila Telemetry Radar</span>
-              <span className="text-[10px] text-slate-400 font-mono">EDSA • Quezon City • Diliman Corridor</span>
+              <span className="text-xs font-black text-white block">Metro Manila Route & Traffic Radar</span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {isLoadingRoute
+                  ? 'Calculating street route...'
+                  : activeOsrmRoute
+                  ? `Via ${activeOsrmRoute.route.summary}`
+                  : 'EDSA • Quezon City • Diliman Corridor'}
+              </span>
             </div>
+            {activeOsrmRoute && (
+              <div className="pt-1.5 border-t border-slate-800/80 text-[11px] font-mono flex items-center gap-2 text-amber-400">
+                <span>{activeOsrmRoute.route.distanceKm} km</span>
+                <span className="text-slate-600">·</span>
+                <span>~{activeOsrmRoute.route.durationMins} mins</span>
+                <span className="text-slate-500 truncate max-w-[130px]">
+                  → {activeOsrmRoute.dropoffName}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Right 1-Col: Live Telemetry HUD Feed */}
         <div className="space-y-4">
           <div className="p-4 bg-[#0c121e] border border-slate-800 rounded-2xl shadow-lg flex items-center justify-between">
-            <span className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <Radio className="w-4 h-4 text-amber-400" />
-              <span>Telemetry Transponders</span>
+            <span className="text-xs font-black uppercase tracking-wider text-slate-300">
+              Active Driver Units
             </span>
             <span className="text-[10px] font-mono text-emerald-400 font-bold">100% Signal</span>
           </div>
 
           <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
-            {filteredFleet.map((drv) => {
+            {filteredFleet.map((drv, index) => {
               const isSelected = selectedDriver?.id === drv.id;
               return (
                 <div
-                  key={drv.id}
+                  key={`livetrip-driver-${drv.id || 'drv'}-${drv.email || index}-${index}`}
                   onClick={() => handleFocusDriver(drv)}
                   className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                     isSelected
@@ -217,18 +432,11 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={drv.avatar}
-                        alt={drv.name}
-                        className="w-10 h-10 rounded-xl object-cover ring-1 ring-amber-500/30"
-                      />
-                      <div>
-                        <span className="text-xs font-black text-white block">{drv.name}</span>
-                        <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded">
-                          {drv.plateNumber}
-                        </span>
-                      </div>
+                    <div>
+                      <span className="text-xs font-black text-white block">{drv.name}</span>
+                      <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded">
+                        {drv.plateNumber}
+                      </span>
                     </div>
 
                     <span
@@ -264,20 +472,34 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
                         e.stopPropagation();
                         onInspectDriver(drv);
                       }}
-                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1"
+                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center cursor-pointer"
                     >
-                      <Eye className="w-3 h-3 text-cyan-400" />
-                      <span>Inspect</span>
+                      Inspect
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleFocusDriver(drv);
+                        handleRunMapsGrounding(
+                          `Verified landmarks, pickup bays, gas stations, and traffic hubs near ${drv.name}'s current position in Quezon City / Metro Manila`,
+                          false,
+                          drv.currentLocation
+                        );
+                      }}
+                      className="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                      title="Query Google Maps Grounding around this driver"
+                    >
+                      Maps Info
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onOpenCall(drv.name, drv.phone, 'DRIVER');
                       }}
-                      className="px-2.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-[11px] font-bold transition-colors"
+                      className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
                       title="Direct Line"
                     >
-                      <Phone className="w-3 h-3" />
+                      Call
                     </button>
                   </div>
                 </div>
@@ -285,6 +507,183 @@ export const LiveTripsView: React.FC<LiveTripsViewProps> = ({ onInspectDriver, o
             })}
           </div>
         </div>
+      </div>
+
+      {/* Google Maps Grounding Intelligence Panel (Free Tier) */}
+      <div className="p-6 bg-[#0c121e] border border-slate-800 rounded-3xl shadow-xl space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              <Compass className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-white">
+                  Google Maps Grounding & Landmark Verification
+                </h3>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  FREE TIER • googleMaps Tool
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Real-time place verification, pickup terminals, gas stations, and emergency landmarks grounded with live Google Maps data.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                handleRunMapsGrounding(
+                  'Nearest transport terminals, passenger pickup bays, and malls near current driver coordinates',
+                  false
+                )
+              }
+              disabled={isLoadingMaps}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Nearby Terminals
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleRunMapsGrounding(
+                  '24/7 gas stations, vehicle repair shops, and rest stops nearby',
+                  false
+                )
+              }
+              disabled={isLoadingMaps}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              24/7 Gas & Repair
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleRunMapsGrounding(
+                  'Hospitals, emergency rooms, and police stations near my current location',
+                  true
+                )
+              }
+              disabled={isLoadingMaps}
+              className="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-[11px] font-bold rounded-xl border border-amber-500/30 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Navigation className="w-3 h-3" />
+              <span>Use My GPS</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Search Input Bar */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleRunMapsGrounding();
+          }}
+          className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+        >
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+            <input
+              type="text"
+              value={mapsQuery}
+              onChange={(e) => setMapsQuery(e.target.value)}
+              placeholder="Ask Google Maps about terminals, landmarks, hospitals, or drop-off zones..."
+              className="w-full bg-[#080c14] border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isLoadingMaps}
+            className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            {isLoadingMaps ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Grounding with Google Maps...</span>
+              </>
+            ) : (
+              <>
+                <MapPin className="w-4 h-4" />
+                <span>Search Google Maps Data</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        {mapsError && (
+          <div className="p-3.5 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs text-red-300 font-medium">
+            {mapsError}
+          </div>
+        )}
+
+        {mapsResult && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-2">
+            {/* Grounded Summary */}
+            <div className="lg:col-span-2 p-4 bg-[#080c14] border border-slate-800/90 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 border-b border-slate-800 pb-2">
+                <span className="uppercase font-bold text-amber-400">
+                  Grounded Dispatch Intelligence ({mapsResult.model})
+                </span>
+                <span>
+                  Center: {mapsResult.coordinates.latitude.toFixed(4)},{' '}
+                  {mapsResult.coordinates.longitude.toFixed(4)}
+                </span>
+              </div>
+              <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                {mapsResult.text}
+              </div>
+            </div>
+
+            {/* Extracted Google Maps Grounding Links & Review Snippets */}
+            <div className="p-4 bg-[#080c14] border border-slate-800/90 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                  Verified Google Maps Places ({mapsResult.places.length})
+                </span>
+                <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+              </div>
+
+              {mapsResult.places.length === 0 ? (
+                <p className="text-xs text-slate-400">
+                  No specific map pin links returned for this query. Try searching for a specific landmark or station name.
+                </p>
+              ) : (
+                <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                  {mapsResult.places.map((place, idx) => (
+                    <div
+                      key={`maps-place-${idx}`}
+                      className="p-3 bg-slate-900/70 border border-slate-800 hover:border-amber-500/40 rounded-xl transition-all space-y-1.5"
+                    >
+                      <a
+                        href={place.uri}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between gap-2 text-xs font-bold text-amber-400 hover:text-amber-300 underline decoration-amber-500/40"
+                      >
+                        <span className="truncate">{place.title}</span>
+                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                      </a>
+                      {place.reviewSnippets && place.reviewSnippets.length > 0 && (
+                        <div className="space-y-1 pt-1 border-t border-slate-800/70">
+                          {place.reviewSnippets.map((snippet, sIdx) => (
+                            <p
+                              key={`snippet-${idx}-${sIdx}`}
+                              className="text-[11px] text-slate-400 italic leading-snug"
+                            >
+                              "{snippet}"
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -2,6 +2,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Admin Accounts collection
+    match /adminAccounts/{id=**} {
+      allow read, write: if true;
+    }
+
+    // Password Reset Reports collection
+    match /passwordResetReports/{id=**} {
+      allow read, write: if true;
+    }
+
     // Passengers collection and any subcollections
     match /passengers/{id=**} {
       allow read, write: if true;
@@ -73,6 +83,10 @@ service cloud.firestore {
     match /test/{id=**} {
       allow read, write: if true;
     }
+
+    // Fallback rule for any new collections added by connected Passenger & Driver apps
+    match /{document=**} {
+      allow read, write: if true;
+    }
   }
 }
-

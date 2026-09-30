@@ -26,6 +26,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
     markAllNotificationsAsRead,
     activeCriticalSOSCount,
   } = useRealtimeDb();
+  const [loadedAllHistory, setLoadedAllHistory] = React.useState(false);
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -77,12 +78,12 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
 
       {/* Notifications Feed */}
       <div className="space-y-3">
-        {notifications.map((notif) => {
+        {notifications.map((notif, index) => {
           const isEmergency = notif.category === 'EMERGENCY';
 
           return (
             <div
-              key={notif.id}
+              key={`notif-${notif.id || 'n'}-${index}`}
               onClick={() => {
                 markNotificationAsRead(notif.id);
                 if (notif.actionTab) onNavigate(notif.actionTab, notif.actionId);
@@ -145,12 +146,18 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
 
       {/* Load Older Button */}
       <div className="text-center pt-2">
-        <button
-          onClick={() => {}}
-          className="px-5 py-2.5 bg-[#0c121e] hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-bold rounded-2xl transition-colors"
-        >
-          LOAD OLDER NOTIFICATIONS
-        </button>
+        {loadedAllHistory ? (
+          <span className="inline-block px-5 py-2.5 bg-[#0c121e] border border-slate-800 text-slate-400 text-xs font-semibold rounded-2xl">
+            All historical notifications ({notifications.length}) are currently loaded
+          </span>
+        ) : (
+          <button
+            onClick={() => setLoadedAllHistory(true)}
+            className="px-5 py-2.5 bg-[#0c121e] hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-bold rounded-2xl transition-colors cursor-pointer"
+          >
+            LOAD OLDER NOTIFICATIONS
+          </button>
+        )}
       </div>
     </div>
   );

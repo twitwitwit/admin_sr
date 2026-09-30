@@ -2,23 +2,13 @@ import React, { useState } from 'react';
 import {
   Users,
   Search,
-  Download,
   Star,
-  Eye,
-  Ban,
-  CheckCircle2,
-  Wallet,
-  Phone,
-  Mail,
-  Plus,
-  RotateCw,
-  Database,
-  Cloud,
   X,
-  ShieldCheck,
 } from 'lucide-react';
 import { useRealtimeDb } from '../../context/RealtimeDbContext';
 import { Passenger } from '../../types';
+import { formatHumanReadablePassengerId } from '../../utils/idHelpers';
+import { getFallbackAvatarUrl, formatUploadedSourceLabel, isCustomUploadedAvatar } from '../../utils/imageHelpers';
 
 interface PassengersViewProps {
   onInspectPassenger: (passenger: Passenger) => void;
@@ -34,23 +24,12 @@ export const PassengersView: React.FC<PassengersViewProps> = ({
     togglePassengerStatus,
     exportCsvData,
     refreshCloudData,
-    registerPassenger,
   } = useRealtimeDb();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'SUSPENDED'>('ALL');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
-
-  // New passenger registration modal state
-  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    walletBalance: 250,
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSyncNow = async () => {
     setIsSyncing(true);
@@ -64,29 +43,6 @@ export const PassengersView: React.FC<PassengersViewProps> = ({
       setTimeout(() => setSyncNotice(null), 4000);
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name.trim()) return;
-
-    setIsSubmitting(true);
-    try {
-      await registerPassenger({
-        name: formData.name.trim(),
-        phone: formData.phone.trim() || '0917-000-0000',
-        email: formData.email.trim() || `${formData.name.toLowerCase().replace(/\s+/g, '')}@swiftride.ph`,
-        walletBalance: Number(formData.walletBalance) || 0,
-      });
-      setIsRegisterModalOpen(false);
-      setFormData({ name: '', phone: '', email: '', walletBalance: 250 });
-      setSyncNotice(`Passenger "${formData.name.trim()}" registered & synced to Firestore!`);
-      setTimeout(() => setSyncNotice(null), 5000);
-    } catch (err) {
-      console.error('Registration failed:', err);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -107,22 +63,17 @@ export const PassengersView: React.FC<PassengersViewProps> = ({
     <div id="passengers-view-root" className="space-y-6 pb-12">
       {/* Cloud Status Banner */}
       <div className="bg-[#0b101d] border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
-            <Database className="w-4 h-4" />
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black text-white">Live Firestore Real-Time Sync</span>
+            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Active Listeners: passengers, riders, users
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-white">Live Firestore Real-Time Sync</span>
-              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                Active Listeners: passengers, riders, users
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Registrations from external mobile/web apps reflect automatically. Total synced: <strong className="text-white">{passengers.length}</strong> passengers.
-            </p>
-          </div>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Registrations from external mobile/web apps reflect automatically. Total synced: <strong className="text-white">{passengers.length}</strong> passengers.
+          </p>
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-center">
@@ -136,29 +87,19 @@ export const PassengersView: React.FC<PassengersViewProps> = ({
             id="btn-sync-passengers-cloud"
             onClick={handleSyncNow}
             disabled={isSyncing}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl flex items-center gap-2 border border-slate-700 transition-all disabled:opacity-50"
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl border border-slate-700 transition-all disabled:opacity-50 cursor-pointer"
             title="Fetch latest updates from Firebase collections"
           >
-            <RotateCw className={`w-3.5 h-3.5 text-amber-400 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
-          </button>
-
-          <button
-            id="btn-register-passenger-modal"
-            onClick={() => setIsRegisterModalOpen(true)}
-            className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black text-xs font-extrabold rounded-xl flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Add Passenger</span>
+            {isSyncing ? 'Syncing...' : 'Sync Cloud'}
           </button>
         </div>
       </div>
 
       {/* Top Search & Action Bar */}
-      <div className="p-4 bg-[#0c121e] border border-slate-800 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3 flex-1">
+      <div className="p-4 bg-[#0c121e] border border-slate-800 rounded-2xl shadow-lg flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
           <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
             <input
               type="text"
               value={searchQuery}
@@ -168,12 +109,12 @@ export const PassengersView: React.FC<PassengersViewProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-[#080c14] border border-slate-800 rounded-xl p-1">
+          <div className="flex items-center gap-1 bg-[#080c14] border border-slate-800 rounded-xl p-1 self-start sm:self-auto">
             {['ALL', 'ACTIVE', 'SUSPENDED'].map((st) => (
               <button
                 key={st}
                 onClick={() => setStatusFilter(st as any)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   statusFilter === st
                     ? 'bg-amber-500 text-black'
                     : 'text-slate-400 hover:text-white'
@@ -185,141 +126,142 @@ export const PassengersView: React.FC<PassengersViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between sm:justify-end gap-3">
           <button
             onClick={() => exportCsvData('passengers')}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl flex items-center gap-2 border border-slate-700 transition-colors"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white text-xs font-bold rounded-xl border border-slate-800 transition-all shadow-md cursor-pointer whitespace-nowrap"
           >
-            <Download className="w-3.5 h-3.5 text-amber-400" />
-            <span>Export CSV</span>
+            Export CSV Audit
           </button>
+          <span className="text-xs font-bold text-slate-400 whitespace-nowrap">
+            Total: <strong className="text-white font-mono">{filteredPassengers.length}</strong>
+          </span>
         </div>
       </div>
 
-      {/* Passengers Table */}
-      <div className="bg-[#0c121e] border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+      {/* Passengers Table Card */}
+      <div className="bg-[#0c121e] border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#080c14] text-slate-400 uppercase font-bold text-[10px] tracking-wider border-b border-slate-800">
-              <tr>
-                <th className="py-3.5 px-6">Passenger</th>
-                <th className="py-3.5 px-6">Contact Details</th>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-slate-800 bg-[#080c14] text-[10px] font-black uppercase tracking-wider text-slate-400">
+                <th className="py-3.5 px-6">Passenger Profile</th>
+                <th className="py-3.5 px-6">Contact Number</th>
+                <th className="py-3.5 px-6">Email Address</th>
                 <th className="py-3.5 px-6">Wallet Balance</th>
-                <th className="py-3.5 px-6">Completed Rides</th>
+                <th className="py-3.5 px-6">Trips Completed</th>
                 <th className="py-3.5 px-6">Rating</th>
                 <th className="py-3.5 px-6">Status</th>
                 <th className="py-3.5 px-6 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/80">
+            <tbody className="divide-y divide-slate-800/60 text-xs">
               {filteredPassengers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
-                    <Users className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                    <p className="font-bold text-white text-sm">No passengers found</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      No passengers registered yet, or no records match your filter.
-                    </p>
+                  <td colSpan={8} className="py-12 text-center text-slate-500">
+                    No passengers match your search criteria.
                   </td>
                 </tr>
               ) : (
                 filteredPassengers.map((passenger) => (
                   <tr
                     key={passenger.id}
-                    className="hover:bg-slate-900/50 transition-colors group"
+                    onClick={() => onInspectPassenger(passenger)}
+                    title="Click to open Passenger Profile & Uploaded App Photo"
+                    className="hover:bg-slate-800/40 transition-colors group cursor-pointer"
                   >
-                    {/* Passenger */}
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={passenger.avatar}
-                          alt={passenger.name}
-                          className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-700"
-                        />
-                        <div>
-                          <span className="font-bold text-white text-sm block">
-                            {passenger.name}
+                    <td className="py-3.5 px-6">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="font-semibold text-white group-hover:text-cyan-400 transition-colors flex items-center gap-2 text-sm">
+                          <span>{passenger.name}</span>
+                          <span className="text-[11px] font-mono text-amber-400">{formatHumanReadablePassengerId(passenger.id)}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          <span className="text-[11px] text-slate-400">
+                            {passenger.joinedDate || 'Joined 2026'}
                           </span>
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            ID: {passenger.id} • Joined: {passenger.joinedDate}
-                          </span>
+                          {isCustomUploadedAvatar(passenger.avatar) ? (
+                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                              App Photo Uploaded
+                            </span>
+                          ) : passenger.mobilePhotoUri ? (
+                            <span
+                              title={`Connected Passenger App Photo: ${passenger.mobilePhotoUri}`}
+                              className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded"
+                            >
+                              App Photo Attached
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </td>
 
-                    {/* Contact */}
-                    <td className="py-4 px-6">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-mono text-slate-300 font-bold">
-                          {passenger.phone}
-                        </span>
-                        <span className="text-slate-400 text-[11px]">
-                          {passenger.email}
-                        </span>
+                    <td className="py-3.5 px-6 font-mono tabular-nums text-slate-300">
+                      {passenger.phone}
+                    </td>
+
+                    <td className="py-3.5 px-6 text-slate-300">
+                      {passenger.email}
+                    </td>
+
+                    <td className="py-3.5 px-6 font-mono tabular-nums font-bold text-amber-400">
+                      ₱{(passenger.walletBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+
+                    <td className="py-3.5 px-6 font-mono tabular-nums text-slate-200">
+                      {passenger.completedRides || 0}
+                    </td>
+
+                    <td className="py-3.5 px-6">
+                      <div className="flex items-center gap-1 font-mono tabular-nums font-bold text-amber-400">
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        <span>{Number(passenger.rating || 5.0).toFixed(2)}</span>
                       </div>
                     </td>
 
-                    {/* Wallet */}
-                    <td className="py-4 px-6">
-                      <span className="font-mono font-black text-emerald-400 text-sm">
-                        ₱{passenger.walletBalance.toFixed(2)}
-                      </span>
-                    </td>
-
-                    {/* Completed Rides */}
-                    <td className="py-4 px-6">
-                      <span className="font-mono font-bold text-white text-sm">
-                        {passenger.completedRides}
-                      </span>
-                    </td>
-
-                    {/* Rating */}
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-1.5 font-black text-amber-400">
-                        <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                        <span>{passenger.rating.toFixed(1)}</span>
-                      </div>
-                    </td>
-
-                    {/* Status */}
-                    <td className="py-4 px-6">
+                    <td className="py-3.5 px-6">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
                           passenger.status === 'ACTIVE'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            ? 'text-emerald-400'
+                            : 'text-rose-400'
                         }`}
                       >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            passenger.status === 'ACTIVE' ? 'bg-emerald-400' : 'bg-rose-400'
+                          }`}
+                        ></span>
                         {passenger.status}
                       </span>
                     </td>
 
-                    {/* Actions */}
-                    <td className="py-4 px-6 text-right">
+                    <td className="py-3.5 px-6 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => onInspectPassenger(passenger)}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold transition-colors flex items-center gap-1"
-                          title="View Details"
+                          onClick={() => onOpenCall(passenger.name, passenger.phone, 'PASSENGER')}
+                          className="px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer border border-slate-700/80"
+                          title="Call Passenger"
                         >
-                          <Eye className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Inspect</span>
+                          Call
+                        </button>
+
+                        <button
+                          onClick={() => onInspectPassenger(passenger)}
+                          className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-lg text-[11px] font-semibold transition-colors border border-amber-500/30 cursor-pointer whitespace-nowrap"
+                        >
+                          View Profile & Photo
                         </button>
 
                         <button
                           onClick={() => togglePassengerStatus(passenger.id)}
-                          className={`p-1.5 rounded-xl border transition-colors ${
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
                             passenger.status === 'ACTIVE'
-                              ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
-                              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                              ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                           }`}
-                          title={passenger.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
                         >
-                          {passenger.status === 'ACTIVE' ? (
-                            <Ban className="w-4 h-4" />
-                          ) : (
-                            <CheckCircle2 className="w-4 h-4" />
-                          )}
+                          {passenger.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
                         </button>
                       </div>
                     </td>
@@ -331,109 +273,11 @@ export const PassengersView: React.FC<PassengersViewProps> = ({
         </div>
 
         {/* Footer info */}
-        <div className="p-4 bg-[#080c14] border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+        <div className="p-4 bg-[#080c14] border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-400">
           <span>Showing {filteredPassengers.length} active database records</span>
           <span className="font-mono text-[11px] text-amber-400">Database: Cloud Firestore (Synced)</span>
         </div>
       </div>
-
-      {/* Register Passenger Modal */}
-      {isRegisterModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-[#0e1524] border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold">
-                  <Plus className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-white">Register New Passenger</h3>
-                  <p className="text-[11px] text-slate-400">Creates account and writes to cloud database</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsRegisterModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleRegisterSubmit} className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Maria Santos"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-[#080c14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Mobile Number
-                </label>
-                <input
-                  type="text"
-                  placeholder="0917-123-4567"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full bg-[#080c14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  placeholder="maria.santos@gmail.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full bg-[#080c14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Initial Wallet Balance (₱)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="50"
-                  value={formData.walletBalance}
-                  onChange={(e) => setFormData({ ...formData, walletBalance: Number(e.target.value) })}
-                  className="w-full bg-[#080c14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 font-mono"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsRegisterModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black text-xs font-black rounded-xl shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Registering...' : 'Register Passenger'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
